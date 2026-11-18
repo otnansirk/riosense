@@ -1,0 +1,15 @@
+# Portable SDK & Local Build Caches (100% isolated inside project)
+.sdk/
+.gradle/
+local.properties
+
+# Android Build Outputs
+**/build/
+output/*.apk
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# macOS
+.DS_Store
