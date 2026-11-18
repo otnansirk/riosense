@@ -1,0 +1,337 @@
+package id.bangsadigital.riosense.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import id.bangsadigital.riosense.data.VehicleRepository
+import id.bangsadigital.riosense.model.KiaRioPaintColor
+import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.ui.components.KiaRioInteractiveStage
+import id.bangsadigital.riosense.ui.components.LeftSpeedAndSecurityPanel
+import id.bangsadigital.riosense.ui.components.MinimizedFloatingPillView
+import id.bangsadigital.riosense.ui.components.RightEngineTelemetryPanel
+import id.bangsadigital.riosense.ui.components.SimulatorAndSettingsSheet
+import id.bangsadigital.riosense.ui.theme.ObsidianColors
+
+@Composable
+fun RioSenseDashboardScreen(
+    telemetry: VehicleTelemetry,
+    repository: VehicleRepository,
+    onEnterPipMode: () -> Unit
+) {
+    var showSimulatorDrawer by remember { mutableStateOf(false) }
+
+    if (telemetry.isMinimized) {
+        MinimizedFloatingPillView(
+            telemetry = telemetry,
+            onExpandDashboard = { repository.setMinimized(false) },
+            onTriggerSimulatedDoorAlarm = {
+                repository.applyNormalPreset()
+                repository.setMinimized(true)
+                repository.toggleDoor("RR")
+            },
+            onEnterNativePip = onEnterPipMode
+        )
+        return
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(ObsidianColors.DeepObsidian)
+            .padding(horizontal = 18.dp, vertical = 12.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // 1. BORDERLESS OEM TOP BAR
+            TopObsidianBar(
+                telemetry = telemetry,
+                onSelectPaint = { repository.setPaintColor(it) },
+                onToggleMute = { repository.toggleAudioMute() },
+                onOpenSimulator = { showSimulatorDrawer = !showSimulatorDrawer },
+                onMinimize = { repository.setMinimized(true) }
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // 2. SEAMLESS 3-COLUMN STAGE (Zero borders on Speed, Car Stage, and Engine Telemetry)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                LeftSpeedAndSecurityPanel(
+                    telemetry = telemetry,
+                    onToggleLock = { repository.toggleCentralLock() },
+                    modifier = Modifier.weight(0.26f)
+                )
+
+                KiaRioInteractiveStage(
+                    telemetry = telemetry,
+                    onToggleDoor = { doorCode -> repository.toggleDoor(doorCode) },
+                    modifier = Modifier
+                        .weight(0.48f)
+                        .fillMaxHeight()
+                )
+
+                RightEngineTelemetryPanel(
+                    telemetry = telemetry,
+                    modifier = Modifier.weight(0.26f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // 3. BORDERLESS MINIMALIST STATUS FOOTER
+            BottomAlertBanner(
+                telemetry = telemetry,
+                onAcknowledgeOrFix = { repository.applyNormalPreset() }
+            )
+        }
+
+        // 4. SIMULATOR & SETTINGS SHEET
+        if (showSimulatorDrawer) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.72f))
+                    .clickable { showSimulatorDrawer = false },
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                SimulatorAndSettingsSheet(
+                    telemetry = telemetry,
+                    onSpeedRpmChange = { sp, rpm -> repository.setSpeedAndRpm(sp, rpm) },
+                    onCoolantChange = { temp -> repository.setCoolantTemp(temp) },
+                    onToggleDoor = { code -> repository.toggleDoor(code) },
+                    onToggleLock = { repository.toggleCentralLock() },
+                    onTirePressureChange = { code, psi -> repository.setTirePressure(code, psi) },
+                    onPaintColorSelect = { color -> repository.setPaintColor(color) },
+                    onSpeedThresholdChange = { kmh -> repository.setSpeedLockThreshold(kmh) },
+                    onApplyNormalPreset = { repository.applyNormalPreset() },
+                    onApplyAlertPreset = { repository.applyAlertShowcasePreset() },
+                    onClose = { showSimulatorDrawer = false },
+                    modifier = Modifier.clickable(enabled = false) {}
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TopObsidianBar(
+    telemetry: VehicleTelemetry,
+    onSelectPaint: (KiaRioPaintColor) -> Unit,
+    onToggleMute: () -> Unit,
+    onOpenSimulator: () -> Unit,
+    onMinimize: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Brand & Subtle Status Dot
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "RioSense",
+                color = ObsidianColors.PureSilver,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.5.sp
+            )
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF646C7E))
+                )
+                Text(
+                    text = if (telemetry.simulatorMode) "Simulator" else "OBD Connected",
+                    color = ObsidianColors.DimSilver,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal
+                )
+            }
+        }
+
+        // Paint Swatches (Clean circles without noisy labels)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            KiaRioPaintColor.entries.forEach { paint ->
+                val isSelected = telemetry.paintColor == paint
+                Box(
+                    modifier = Modifier
+                        .size(if (isSelected) 16.dp else 12.dp)
+                        .clip(CircleShape)
+                        .background(paint.primaryHex)
+                        .then(
+                            if (isSelected) {
+                                Modifier.border(1.5.dp, Color.White, CircleShape)
+                            } else {
+                                Modifier
+                            }
+                        )
+                        .clickable { onSelectPaint(paint) }
+                )
+            }
+        }
+
+        // Borderless Matte Charcoal Controls
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF0E1014))
+                    .clickable { onToggleMute() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = if (telemetry.audioAlarmMuted) "Muted" else "Chime",
+                    color = if (telemetry.audioAlarmMuted) ObsidianColors.DimSilver else ObsidianColors.MutedSilver,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF15181F))
+                    .clickable { onOpenSimulator() }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "Controls",
+                    color = ObsidianColors.PureSilver,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF0E1014))
+                    .clickable { onMinimize() }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "Minimize",
+                    color = ObsidianColors.MutedSilver,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BottomAlertBanner(
+    telemetry: VehicleTelemetry,
+    onAcknowledgeOrFix: () -> Unit
+) {
+    val alerts = telemetry.activeAlerts
+    val hasAlert = alerts.isNotEmpty()
+
+    val bg = if (hasAlert) ObsidianColors.AlertSurface else Color(0xFF0B0C0F)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(bg)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(if (hasAlert) ObsidianColors.CrimsonAlert else Color(0xFF4C5260))
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = if (hasAlert) {
+                    alerts.joinToString("  ·  ")
+                } else {
+                    "Kia Rio UB 2015  ·  ${telemetry.paintColor.displayName}  ·  All systems nominal"
+                },
+                color = if (hasAlert) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                fontSize = 11.sp,
+                fontWeight = if (hasAlert) FontWeight.Medium else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        if (hasAlert) {
+            Spacer(modifier = Modifier.width(10.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF281A1D))
+                    .clickable { onAcknowledgeOrFix() }
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "Dismiss",
+                    color = ObsidianColors.PureSilver,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
