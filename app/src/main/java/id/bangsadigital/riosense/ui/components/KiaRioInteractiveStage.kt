@@ -14,6 +14,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,6 +72,14 @@ import kotlin.math.roundToInt
 private const val TURNTABLE_COUNT = 180
 private const val DOOR_SEQ_MAX_INDEX = 19
 
+private enum class CarViewMode(val label: String, val targetFrame: Float?) {
+    AUTO_ROTATE("360° Auto", null),
+    FRONT("Front", 62f),
+    FRONT_45("45° Front", 72f),
+    BACK("Back", 164f),
+    BACK_45("45° Back", 0f)
+}
+
 @Composable
 fun KiaRioInteractiveStage(
     telemetry: VehicleTelemetry,
@@ -78,13 +89,8 @@ fun KiaRioInteractiveStage(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // Semua frame turntable_360 dan doors menggunakan Transparent PNG (ARGB_8888 untuk channel alpha utuh)
     val decodeOpts = remember {
-        BitmapFactory.Options().apply {
-            inPreferredConfig = Bitmap.Config.RGB_565
-        }
-    }
-    // Transparent PNG turntable frames membutuhkan ARGB_8888 agar channel alpha tetap utuh
-    val turntableDecodeOpts = remember {
         BitmapFactory.Options().apply {
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
@@ -104,7 +110,7 @@ fun KiaRioInteractiveStage(
         val name = String.format("car_sequences/turntable_360/turntable_%03d.png", normIdx)
         val loaded = runCatching {
             context.assets.open(name).use {
-                BitmapFactory.decodeStream(it, null, turntableDecodeOpts)?.asImageBitmap()
+                BitmapFactory.decodeStream(it, null, decodeOpts)?.asImageBitmap()
             }
         }.getOrNull()
         if (loaded != null) {
@@ -142,7 +148,7 @@ fun KiaRioInteractiveStage(
         synchronized(doorCache) {
             doorCache.get(key)?.let { return it }
         }
-        val name = String.format("car_sequences/doors/%s_%02d.jpg", prefix, clampedStep)
+        val name = String.format("car_sequences/doors/%s_%02d.png", prefix, clampedStep)
         val loaded = runCatching {
             context.assets.open(name).use {
                 BitmapFactory.decodeStream(it, null, decodeOpts)?.asImageBitmap()
@@ -165,11 +171,38 @@ fun KiaRioInteractiveStage(
     }
 
     var isUserDraggingTurntable by remember { mutableStateOf(false) }
+    var selectedViewMode by remember { mutableStateOf<CarViewMode?>(CarViewMode.BACK_45) }
+
+    suspend fun animateTurntableTo(targetFrame: Float) {
+        val currentMod = ((turntableAnim.value % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
+        var delta = targetFrame - currentMod
+        if (delta > TURNTABLE_COUNT / 2f) delta -= TURNTABLE_COUNT
+        if (delta < -TURNTABLE_COUNT / 2f) delta += TURNTABLE_COUNT
+        turntableAnim.snapTo(currentMod)
+        turntableAnim.animateTo(
+            targetValue = currentMod + delta,
+            animationSpec = tween(durationMillis = 440, easing = FastOutSlowInEasing)
+        )
+        turntableAnim.snapTo(targetFrame)
+    }
 
     val d = telemetry.doors
     val rightOpenNow = d.frontRightOpen || d.rearRightOpen
     val leftOpenNow = d.frontLeftOpen || d.rearLeftOpen
     val trunkOpenNow = d.trunkOpen
+
+    // Mode Auto Rotate 360°: putar halus terus-menerus mengikuti VSync layar (~16 frame/dtk)
+    LaunchedEffect(selectedViewMode) {
+        if (selectedViewMode == CarViewMode.AUTO_ROTATE) {
+            var lastNanos = withFrameNanos { it }
+            while (selectedViewMode == CarViewMode.AUTO_ROTATE) {
+                val now = withFrameNanos { it }
+                val dtSec = ((now - lastNanos) / 1_000_000_000f).coerceAtMost(0.05f)
+                lastNanos = now
+                turntableAnim.snapTo((turntableAnim.value + dtSec * 16f) % TURNTABLE_COUNT)
+            }
+        }
+    }
 
     // Animasi progres ayunan pintu Kanan, Kiri, dan Bagasi (0f = tertutup, 19f = terbuka penuh)
     val rightSwingAnim = remember { Animatable(if (rightOpenNow) 19f else 0f) }
@@ -203,6 +236,7 @@ fun KiaRioInteractiveStage(
 
         if (rightOpenNow || leftOpenNow || trunkOpenNow) {
             isUserDraggingTurntable = false
+            selectedViewMode = CarViewMode.BACK_45
             // Jika mobil sedang di sudut lain, putar balik cepat ke titik awal (0°) sebelum pintu mengayun buka
             val currentMod = ((turntableAnim.value % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
             if (currentMod > 1.0f && currentMod < TURNTABLE_COUNT - 1.0f) {
@@ -266,43 +300,47 @@ fun KiaRioInteractiveStage(
         (if (showRightDoorAnim) 1 else 0) +
         (if (showTrunkAnim) 1 else 0)
 
-    Box(
+    Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 4.dp, vertical = 2.dp)
-            .pointerInput(rightOpenNow, leftOpenNow, trunkOpenNow) {
-                detectDragGestures(
-                    onDragStart = {
-                        isUserDraggingTurntable = true
-                    },
-                    onDragEnd = {
-                        if (rightOpenNow || leftOpenNow || trunkOpenNow) {
-                            isUserDraggingTurntable = false
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .pointerInput(rightOpenNow, leftOpenNow, trunkOpenNow) {
+                    detectDragGestures(
+                        onDragStart = {
+                            isUserDraggingTurntable = true
+                            selectedViewMode = null
+                        },
+                        onDragEnd = {
+                            if (rightOpenNow || leftOpenNow || trunkOpenNow) {
+                                isUserDraggingTurntable = false
+                            }
                         }
-                    }
-                ) { change, dragAmount ->
-                    change.consume()
-                    scope.launch {
-                        // 180 frame (2 derajat per frame): geser ~514px = 360 derajat penuh!
-                        turntableAnim.snapTo(turntableAnim.value + dragAmount.x * 0.35f)
+                    ) { change, dragAmount ->
+                        change.consume()
+                        scope.launch {
+                            // 180 frame (2 derajat per frame): geser ~514px = 360 derajat penuh!
+                            turntableAnim.snapTo(turntableAnim.value + dragAmount.x * 0.35f)
+                        }
                     }
                 }
-            }
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onDoubleTap = {
-                        isUserDraggingTurntable = false
-                        scope.launch {
-                            val currentMod = ((turntableAnim.value % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
-                            val targetZero = if (currentMod <= TURNTABLE_COUNT / 2f) 0f else TURNTABLE_COUNT.toFloat()
-                            turntableAnim.snapTo(currentMod)
-                            turntableAnim.animateTo(targetZero, tween(320, easing = FastOutSlowInEasing))
-                            turntableAnim.snapTo(0f)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            isUserDraggingTurntable = false
+                            selectedViewMode = CarViewMode.BACK_45
+                            scope.launch {
+                                animateTurntableTo(0f)
+                            }
                         }
-                    }
-                )
-            }
-    ) {
+                    )
+                }
+        ) {
         when {
             // KASUS 1: Multi-Panel Aktif Bersamaan (Misal Kiri + Kanan, atau Pintu + Bagasi)
             activePanelsCount >= 2 -> {
@@ -615,6 +653,80 @@ fun KiaRioInteractiveStage(
                     tire = telemetry.tpms.rearRight,
                     isLow = rrLow,
                     alignRight = true
+                )
+            }
+        }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        CarViewSelectionBar(
+            selectedMode = selectedViewMode,
+            onSelectMode = { mode ->
+                selectedViewMode = mode
+                val target = mode.targetFrame
+                if (target == null) {
+                    isUserDraggingTurntable = rightOpenNow || leftOpenNow || trunkOpenNow
+                } else {
+                    isUserDraggingTurntable = (mode != CarViewMode.BACK_45) && (rightOpenNow || leftOpenNow || trunkOpenNow)
+                    scope.launch {
+                        animateTurntableTo(target)
+                    }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun CarViewSelectionBar(
+    selectedMode: CarViewMode?,
+    onSelectMode: (CarViewMode) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF0B0C10))
+            .border(1.dp, ObsidianColors.MetallicBorder, RoundedCornerShape(10.dp))
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CarViewMode.values().forEach { mode ->
+            val isSelected = selectedMode == mode
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(if (isSelected) ObsidianColors.DarkGreyActive else Color.Transparent)
+                    .then(
+                        if (isSelected) {
+                            Modifier.border(0.8.dp, ObsidianColors.HighlightBorder, RoundedCornerShape(7.dp))
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .clickable { onSelectMode(mode) }
+                    .padding(vertical = 6.dp, horizontal = 4.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (mode == CarViewMode.AUTO_ROTATE) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(if (isSelected) ObsidianColors.IceCyan else ObsidianColors.DimSilver)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+                Text(
+                    text = mode.label,
+                    color = if (isSelected) ObsidianColors.PureSilver else ObsidianColors.MutedSilver,
+                    fontSize = 9.5.sp,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                    maxLines = 1
                 )
             }
         }
