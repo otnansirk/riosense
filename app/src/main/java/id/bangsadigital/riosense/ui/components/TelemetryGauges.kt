@@ -66,17 +66,17 @@ fun LeftSpeedAndSecurityPanel(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // Minimalist Gear Indicator at top of cluster
+        // Minimalist 6-Speed Manual Transmission Gear Indicator at top of cluster
         Row(
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            listOf("P", "R", "N", "D").forEach { g ->
+            listOf("R", "N", "1", "2", "3", "4", "5", "6").forEach { g ->
                 val active = telemetry.gear == g
                 Text(
                     text = g,
                     color = if (active) ObsidianColors.PureSilver else Color(0xFF383C47),
-                    fontSize = if (active) 15.sp else 12.sp,
+                    fontSize = if (active) 15.sp else 11.sp,
                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
                 )
             }

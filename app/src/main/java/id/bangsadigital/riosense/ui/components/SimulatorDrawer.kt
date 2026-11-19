@@ -178,7 +178,7 @@ fun SimulatorAndSettingsSheet(
         // 2. Telemetry Sliders
         Column {
             Text(
-                text = "Speed ${telemetry.speedKmh} km/h  ·  ${telemetry.rpm} r/min",
+                text = "Speed ${telemetry.speedKmh} km/h  ·  ${telemetry.rpm} r/min  ·  Gear ${telemetry.gear} (6MT)",
                 color = ObsidianColors.MutedSilver,
                 fontSize = 11.sp
             )
@@ -186,7 +186,16 @@ fun SimulatorAndSettingsSheet(
                 value = telemetry.speedKmh.toFloat(),
                 onValueChange = { newSpeed ->
                     val sp = newSpeed.toInt()
-                    val calcRpm = if (sp == 0) 780 else (950 + sp * 32).coerceAtMost(6600)
+                    val ratio = when {
+                        sp == 0 -> 0f
+                        sp <= 20 -> 7.8f
+                        sp <= 40 -> 14.0f
+                        sp <= 65 -> 20.0f
+                        sp <= 90 -> 26.2f
+                        sp <= 120 -> 32.5f
+                        else -> 39.5f
+                    }
+                    val calcRpm = if (sp == 0) 780 else ((sp * 1000f) / ratio).toInt().coerceIn(900, 6600)
                     onSpeedRpmChange(sp, calcRpm)
                 },
                 valueRange = 0f..160f,

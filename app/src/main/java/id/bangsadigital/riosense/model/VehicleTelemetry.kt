@@ -103,7 +103,7 @@ data class VehicleTelemetry(
     val rpm: Int = 780,
     val coolantTempC: Int = 88,
     val batteryVoltage: Float = 14.1f,
-    val gear: String = "D",
+    val gear: String = "N",
     val centralLocked: Boolean = true,
     val doors: DoorState = DoorState(),
     val lights: LightState = LightState(),

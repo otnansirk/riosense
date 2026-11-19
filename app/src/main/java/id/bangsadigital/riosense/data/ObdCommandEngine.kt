@@ -63,4 +63,26 @@ object ObdCommandEngine {
         val isLocked = (lockByte and 0x01) != 0
         return doors to isLocked
     }
+
+    /**
+     * Estimates the active gear (R, N, 1..6) for a Kia Rio UB 1.4L Gamma 6-Speed Manual Transmission
+     * using live OBD2 vehicle speed (PID 010D) and engine RPM (PID 010C).
+     */
+    fun estimateManualGear(
+        speedKmh: Int,
+        rpm: Int,
+        isReverseSwitchOn: Boolean = false
+    ): String {
+        if (isReverseSwitchOn) return "R"
+        if (speedKmh <= 1 || rpm < 750) return "N"
+        val kmhPer1000Rpm = (speedKmh * 1000f) / rpm.toFloat()
+        return when {
+            kmhPer1000Rpm < 10.5f -> "1"
+            kmhPer1000Rpm < 16.5f -> "2"
+            kmhPer1000Rpm < 23.0f -> "3"
+            kmhPer1000Rpm < 29.5f -> "4"
+            kmhPer1000Rpm < 36.5f -> "5"
+            else -> "6"
+        }
+    }
 }

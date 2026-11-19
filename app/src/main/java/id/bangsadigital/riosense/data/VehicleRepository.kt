@@ -20,7 +20,7 @@ class VehicleRepository {
             rpm = 2400,
             coolantTempC = 88,
             batteryVoltage = 14.2f,
-            gear = "D",
+            gear = "3",
             centralLocked = false,
             doors = DoorState(rearRightOpen = true),
             tpms = TpmsState(
@@ -50,11 +50,10 @@ class VehicleRepository {
     }
 
     fun setSpeedAndRpm(speedKmh: Int, rpm: Int) = updateWithAutoWake {
-        val gear = when {
-            speedKmh == 0 -> "P"
-            else -> "D"
-        }
-        it.copy(speedKmh = speedKmh.coerceIn(0, 220), rpm = rpm.coerceIn(0, 7000), gear = gear)
+        val clampedSpeed = speedKmh.coerceIn(0, 220)
+        val clampedRpm = rpm.coerceIn(0, 7000)
+        val gear = ObdCommandEngine.estimateManualGear(clampedSpeed, clampedRpm)
+        it.copy(speedKmh = clampedSpeed, rpm = clampedRpm, gear = gear)
     }
 
     fun setCoolantTemp(tempC: Int) = updateWithAutoWake {
@@ -159,6 +158,7 @@ class VehicleRepository {
                 speedKmh = 62,
                 rpm = 1950,
                 coolantTempC = 88,
+                gear = ObdCommandEngine.estimateManualGear(62, 1950),
                 centralLocked = true,
                 doors = DoorState(),
                 tpms = TpmsState(
@@ -178,6 +178,7 @@ class VehicleRepository {
                 speedKmh = 45,
                 rpm = 2400,
                 coolantTempC = 88,
+                gear = ObdCommandEngine.estimateManualGear(45, 2400),
                 centralLocked = false,
                 doors = DoorState(rearRightOpen = true),
                 tpms = TpmsState(
