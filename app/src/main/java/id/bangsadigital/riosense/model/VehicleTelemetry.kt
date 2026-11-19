@@ -64,7 +64,10 @@ data class TireInfo(
     val label: String,
     val pressurePsi: Float,
     val tempC: Int
-)
+) {
+    fun isAlert(lowPsi: Float, highPsi: Float, highTempC: Int): Boolean =
+        pressurePsi < lowPsi || pressurePsi > highPsi || tempC >= highTempC
+}
 
 data class TpmsState(
     val frontLeft: TireInfo = TireInfo("FL", "Depan Kiri", 32.0f, 34),
@@ -72,8 +75,10 @@ data class TpmsState(
     val rearLeft: TireInfo = TireInfo("RL", "Belakang Kiri", 31.5f, 34),
     val rearRight: TireInfo = TireInfo("RR", "Belakang Kanan", 31.5f, 34)
 ) {
-    fun lowPressureTires(thresholdPsi: Float): List<TireInfo> =
-        listOf(frontLeft, frontRight, rearLeft, rearRight).filter { it.pressurePsi < thresholdPsi }
+    fun alertTires(lowPsi: Float, highPsi: Float, highTempC: Int): List<TireInfo> =
+        listOf(frontLeft, frontRight, rearLeft, rearRight).filter {
+            it.isAlert(lowPsi, highPsi, highTempC)
+        }
 }
 
 data class VehicleTelemetry(
@@ -88,6 +93,8 @@ data class VehicleTelemetry(
     val paintColor: KiaRioPaintColor = KiaRioPaintColor.SNOW_WHITE_PEARL,
     val speedLockAlarmThresholdKmh: Int = 20,
     val tpmsLowThresholdPsi: Float = 26.0f,
+    val tpmsHighThresholdPsi: Float = 38.0f,
+    val tpmsHighTempC: Int = 40,
     val obdConnected: Boolean = false,
     val simulatorMode: Boolean = true,
     val isMinimized: Boolean = false,
@@ -102,11 +109,11 @@ data class VehicleTelemetry(
     val isCoolantOverheat: Boolean
         get() = coolantTempC >= 102
 
-    val lowTires: List<TireInfo>
-        get() = tpms.lowPressureTires(tpmsLowThresholdPsi)
+    val alertTires: List<TireInfo>
+        get() = tpms.alertTires(tpmsLowThresholdPsi, tpmsHighThresholdPsi, tpmsHighTempC)
 
     val hasAnyCriticalAlert: Boolean
-        get() = doors.anyDoorOpen || isSpeedUnlockAlarm || isCoolantOverheat || lowTires.isNotEmpty()
+        get() = doors.anyDoorOpen || isSpeedUnlockAlarm || isCoolantOverheat || alertTires.isNotEmpty()
 
     val activeAlerts: List<String>
         get() = buildList {
@@ -116,8 +123,13 @@ data class VehicleTelemetry(
             if (isSpeedUnlockAlarm) {
                 add("ALARM KEAMANAN: Door Lock Belum Terkunci pada Kecepatan $speedKmh km/h (> $speedLockAlarmThresholdKmh km/h)!")
             }
-            lowTires.forEach { tire ->
-                add("TPMS ALERT: Ban ${tire.label} (${tire.code}) Tekanan Rendah (${String.format("%.1f", tire.pressurePsi)} PSI)!")
+            alertTires.forEach { tire ->
+                val reason = when {
+                    tire.pressurePsi < tpmsLowThresholdPsi -> "Tekanan Rendah (${String.format("%.1f", tire.pressurePsi)} PSI)"
+                    tire.pressurePsi > tpmsHighThresholdPsi -> "Tekanan Berlebih (${String.format("%.1f", tire.pressurePsi)} PSI)"
+                    else -> "Suhu Ban Tinggi (${tire.tempC}°C)"
+                }
+                add("TPMS ALERT: Ban ${tire.label} (${tire.code}) $reason!")
             }
             if (isCoolantOverheat) {
                 add("ENGINE OVERHEAT: Suhu Coolant Tinggi ($coolantTempC°C)!")

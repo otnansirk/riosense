@@ -153,33 +153,71 @@ public class TurntableAlphaProcessor {
             if (y < H - 1 && !isBg[cur + W] && isBgCandidate(x, y + 1, cur + W, lowerBandY, scale, maxRgb, distToCore, redFloorGlare)) { isBg[cur + W] = true; q.add(cur + W); }
         }
 
-        // Keep ONLY largest connected component (wipes stray glare blobs & floor spots)
+        // Keep main car component PLUS any bright nearby side-mirror caps detached across dark mirror stalks
         boolean[] fg = new boolean[W * H];
         for (int i = 0; i < W * H; i++) fg[i] = !isBg[i];
 
         int[] compId = new int[W * H];
         int cid = 0, bestCid = 0, bestCount = 0;
+        int maxComps = 4096;
+        int[] compCount = new int[maxComps];
+        int[] compPeakRgb = new int[maxComps];
+        int[] compMinX = new int[maxComps];
+        int[] compMaxX = new int[maxComps];
+        int[] compMinY = new int[maxComps];
+        int[] compMaxY = new int[maxComps];
         int[] queueArr = new int[W * H];
         for (int i = 0; i < W * H; i++) {
             if (fg[i] && compId[i] == 0) {
+                if (cid + 1 >= maxComps) break;
                 cid++;
+                int minX = W, maxX = 0, minY = H, maxY = 0, peak = 0;
                 int head = 0, tail = 0;
                 queueArr[tail++] = i;
                 compId[i] = cid;
                 while (head < tail) {
                     int cur = queueArr[head++];
                     int x = cur % W, y = cur / W;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                    if (maxRgb[cur] > peak) peak = maxRgb[cur];
                     if (x > 0 && fg[cur - 1] && compId[cur - 1] == 0) { compId[cur - 1] = cid; queueArr[tail++] = cur - 1; }
                     if (x < W - 1 && fg[cur + 1] && compId[cur + 1] == 0) { compId[cur + 1] = cid; queueArr[tail++] = cur + 1; }
                     if (y > 0 && fg[cur - W] && compId[cur - W] == 0) { compId[cur - W] = cid; queueArr[tail++] = cur - W; }
                     if (y < H - 1 && fg[cur + W] && compId[cur + W] == 0) { compId[cur + W] = cid; queueArr[tail++] = cur + W; }
                 }
+                compCount[cid] = tail;
+                compPeakRgb[cid] = peak;
+                compMinX[cid] = minX; compMaxX[cid] = maxX;
+                compMinY[cid] = minY; compMaxY[cid] = maxY;
                 if (tail > bestCount) { bestCount = tail; bestCid = cid; }
             }
         }
-        for (int i = 0; i < W * H; i++) fg[i] = (compId[i] == bestCid);
+        int mirrorPad = Math.max(20, (int) Math.round(28 * scale));
+        boolean[] keepComp = new boolean[cid + 1];
+        if (bestCid > 0) {
+            keepComp[bestCid] = true;
+            for (int c = 1; c <= cid; c++) {
+                if (c == bestCid) continue;
+                boolean nearCarX = compMaxX[c] >= compMinX[bestCid] - mirrorPad && compMinX[c] <= compMaxX[bestCid] + mirrorPad;
+                boolean nearCarY = compMaxY[c] >= compMinY[bestCid] && compMinY[c] <= compMaxY[bestCid];
+                if (nearCarX && nearCarY && compCount[c] >= 12 && compPeakRgb[c] >= 110) {
+                    keepComp[c] = true;
+                }
+            }
+        }
+        for (int i = 0; i < W * H; i++) {
+            int c = compId[i];
+            fg[i] = (c > 0 && c <= cid && keepComp[c]);
+        }
 
-        // Seal wheel wells & diagonal wheel-to-fender arches, plus horizontal close for black rear diffuser
+        // Lightly seal thin dark mirror stalks (R=4 above upper-mid car body) + full wheel arches (R=16 lower half)
+        boolean[] closedMirrors = morphCloseLower(fg, W, H, Math.max(3, (int) Math.round(4 * scale)), (int) Math.round(H * 0.25));
+        for (int i = 0; i < W * H; i++) {
+            if (closedMirrors[i]) fg[i] = true;
+        }
         int closeRad = Math.max(12, (int) Math.round(16 * scale));
         int closeMinY = (int) Math.round(H * 0.46);
         boolean[] closed = morphCloseLower(fg, W, H, closeRad, closeMinY);
