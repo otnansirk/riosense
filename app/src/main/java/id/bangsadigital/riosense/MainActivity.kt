@@ -24,13 +24,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Jaga layar Head Unit tetap menyala selama mesin hidup
+        // Keep the Head Unit screen awake while the ignition/app is active
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         setContent {
             val telemetry by vehicleRepository.telemetry.collectAsState()
 
-            // Efek Audio Alarm Otomotif (Chime Beep) saat ada Pintu Terbuka / Speed Lock / TPMS Alert
+            // Automotive alarm chime beep on Door Open / Speed Unlock / TPMS Alert / Coolant Overheat
             LaunchedEffect(
                 telemetry.hasAnyCriticalAlert,
                 telemetry.audioAlarmMuted,

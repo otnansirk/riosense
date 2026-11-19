@@ -62,11 +62,11 @@ data class DoorState(
         get() = frontLeftOpen || frontRightOpen || rearLeftOpen || rearRightOpen || trunkOpen
 
     fun openDoorNames(): List<String> = buildList {
-        if (frontLeftOpen) add("Pintu Depan Kiri (FL)")
-        if (frontRightOpen) add("Pintu Depan Kanan (FR)")
-        if (rearLeftOpen) add("Pintu Belakang Kiri (RL)")
-        if (rearRightOpen) add("Pintu Belakang Kanan (RR)")
-        if (trunkOpen) add("Bagasi Belakang")
+        if (frontLeftOpen) add("Front-Left Door (FL)")
+        if (frontRightOpen) add("Front-Right Door (FR)")
+        if (rearLeftOpen) add("Rear-Left Door (RL)")
+        if (rearRightOpen) add("Rear-Right Door (RR)")
+        if (trunkOpen) add("Tailgate / Trunk")
     }
 }
 
@@ -87,10 +87,10 @@ data class TireInfo(
 }
 
 data class TpmsState(
-    val frontLeft: TireInfo = TireInfo("FL", "Depan Kiri", 32.0f, 34),
-    val frontRight: TireInfo = TireInfo("FR", "Depan Kanan", 32.0f, 35),
-    val rearLeft: TireInfo = TireInfo("RL", "Belakang Kiri", 31.5f, 34),
-    val rearRight: TireInfo = TireInfo("RR", "Belakang Kanan", 31.5f, 34)
+    val frontLeft: TireInfo = TireInfo("FL", "Front Left", 32.0f, 34),
+    val frontRight: TireInfo = TireInfo("FR", "Front Right", 32.0f, 35),
+    val rearLeft: TireInfo = TireInfo("RL", "Rear Left", 31.5f, 34),
+    val rearRight: TireInfo = TireInfo("RR", "Rear Right", 31.5f, 34)
 ) {
     fun alertTires(lowPsi: Float, highPsi: Float, highTempC: Int): List<TireInfo> =
         listOf(frontLeft, frontRight, rearLeft, rearRight).filter {
@@ -136,26 +136,26 @@ data class VehicleTelemetry(
     val activeAlerts: List<String>
         get() = buildList {
             doors.openDoorNames().forEach { doorName ->
-                add("PERINGATAN: $doorName Belum Rapat!")
+                add("DOOR ALERT: $doorName Open")
             }
             if (isSpeedUnlockAlarm) {
-                add("ALARM KEAMANAN: Door Lock Belum Terkunci pada Kecepatan $speedKmh km/h (> $speedLockAlarmThresholdKmh km/h)!")
+                add("SECURITY ALERT: Doors Unlocked at $speedKmh km/h (> $speedLockAlarmThresholdKmh km/h)")
             }
             alertTires.forEach { tire ->
                 val parts = buildList {
                     if (tire.pressurePsi < tpmsLowThresholdPsi) {
-                        add("Tekanan Rendah (${String.format("%.1f", tire.pressurePsi)} PSI)")
+                        add("Low Pressure (${String.format("%.1f", tire.pressurePsi)} PSI)")
                     } else if (tire.pressurePsi > tpmsHighThresholdPsi) {
-                        add("Tekanan Berlebih (${String.format("%.1f", tire.pressurePsi)} PSI)")
+                        add("High Pressure (${String.format("%.1f", tire.pressurePsi)} PSI)")
                     }
                     if (tire.tempC >= tpmsHighTempC) {
-                        add("Suhu Ban Tinggi (${tire.tempC}°C)")
+                        add("High Temp (${tire.tempC}°C)")
                     }
                 }
-                add("TPMS ALERT: Ban ${tire.label} (${tire.code}) ${parts.joinToString(" & ")}!")
+                add("TPMS ALERT: ${tire.label} (${tire.code}) ${parts.joinToString(" & ")}")
             }
             if (isCoolantOverheat) {
-                add("ENGINE OVERHEAT: Suhu Coolant Tinggi ($coolantTempC°C)!")
+                add("ENGINE OVERHEAT: High Coolant Temp ($coolantTempC°C)")
             }
         }
 }

@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.update
 
 class VehicleRepository {
 
-    // Default state sesuai mockup: Kia Rio Putih (Snow White Pearl), Pintu RR terbuka & Ban RL 22 PSI
+    // Initial showcase state: Kia Rio Snow White Pearl, Rear-Right door open & Rear-Left tire at 22 PSI / 41°C
     private val _telemetry = MutableStateFlow(
         VehicleTelemetry(
             speedKmh = 45,
@@ -24,10 +24,10 @@ class VehicleRepository {
             centralLocked = false,
             doors = DoorState(rearRightOpen = true),
             tpms = TpmsState(
-                frontLeft = TireInfo("FL", "Depan Kiri", 32.0f, 34),
-                frontRight = TireInfo("FR", "Depan Kanan", 32.0f, 35),
-                rearLeft = TireInfo("RL", "Belakang Kiri", 22.0f, 41),
-                rearRight = TireInfo("RR", "Belakang Kanan", 31.0f, 34)
+                frontLeft = TireInfo("FL", "Front Left", 32.0f, 34),
+                frontRight = TireInfo("FR", "Front Right", 32.0f, 35),
+                rearLeft = TireInfo("RL", "Rear Left", 22.0f, 41),
+                rearRight = TireInfo("RR", "Rear Right", 31.0f, 34)
             ),
             paintColor = KiaRioPaintColor.SNOW_WHITE_PEARL,
             obdConnected = true,
@@ -40,7 +40,7 @@ class VehicleRepository {
         _telemetry.update { current ->
             val hadAlertBefore = current.hasAnyCriticalAlert
             val next = transform(current)
-            // Jika aplikasi sedang di-minimize dan tiba-tiba muncul alarm baru, otomatis pop-up!
+            // Auto-expand dashboard from minimized state when a new critical alert triggers
             if (current.isMinimized && !hadAlertBefore && next.hasAnyCriticalAlert) {
                 next.copy(isMinimized = false)
             } else {
@@ -152,7 +152,7 @@ class VehicleRepository {
         it.copy(tpmsLowThresholdPsi = psi.coerceIn(20f, 32f))
     }
 
-    /** Preset 1: Semua Normal & Aman */
+    /** Preset 1: All Systems Nominal & Locked */
     fun applyNormalPreset() {
         _telemetry.update {
             it.copy(
@@ -162,16 +162,16 @@ class VehicleRepository {
                 centralLocked = true,
                 doors = DoorState(),
                 tpms = TpmsState(
-                    frontLeft = TireInfo("FL", "Depan Kiri", 32.0f, 34),
-                    frontRight = TireInfo("FR", "Depan Kanan", 32.0f, 34),
-                    rearLeft = TireInfo("RL", "Belakang Kiri", 31.5f, 34),
-                    rearRight = TireInfo("RR", "Belakang Kanan", 31.5f, 34)
+                    frontLeft = TireInfo("FL", "Front Left", 32.0f, 34),
+                    frontRight = TireInfo("FR", "Front Right", 32.0f, 34),
+                    rearLeft = TireInfo("RL", "Rear Left", 31.5f, 34),
+                    rearRight = TireInfo("RR", "Rear Right", 31.5f, 34)
                 )
             )
         }
     }
 
-    /** Preset 2: Demo Pintu RR Terbuka + Ban RL Kempes + Belum Lock */
+    /** Preset 2: Demo Rear-Right Door Open + Rear-Left Low Tire Pressure/High Temp + Unlocked */
     fun applyAlertShowcasePreset() {
         updateWithAutoWake {
             it.copy(
@@ -181,10 +181,10 @@ class VehicleRepository {
                 centralLocked = false,
                 doors = DoorState(rearRightOpen = true),
                 tpms = TpmsState(
-                    frontLeft = TireInfo("FL", "Depan Kiri", 32.0f, 34),
-                    frontRight = TireInfo("FR", "Depan Kanan", 32.0f, 35),
-                    rearLeft = TireInfo("RL", "Belakang Kiri", 22.0f, 41),
-                    rearRight = TireInfo("RR", "Belakang Kanan", 31.0f, 34)
+                    frontLeft = TireInfo("FL", "Front Left", 32.0f, 34),
+                    frontRight = TireInfo("FR", "Front Right", 32.0f, 35),
+                    rearLeft = TireInfo("RL", "Rear Left", 22.0f, 41),
+                    rearRight = TireInfo("RR", "Rear Right", 31.0f, 34)
                 )
             )
         }

@@ -6,8 +6,8 @@ import android.content.Intent
 import id.bangsadigital.riosense.MainActivity
 
 /**
- * Receiver untuk menyalakan aplikasi RioSense secara otomatis (Auto-Up)
- * saat Head Unit Android Orca Eco Plus menyala bersama kontak ACC/Mesin.
+ * BroadcastReceiver that automatically launches RioSense on boot (Auto-Up)
+ * when the Android Head Unit powers on with ACC/Ignition.
  */
 class BootUpReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

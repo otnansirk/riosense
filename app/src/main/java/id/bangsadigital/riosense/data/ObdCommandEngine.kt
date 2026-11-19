@@ -3,16 +3,16 @@ package id.bangsadigital.riosense.data
 import id.bangsadigital.riosense.model.DoorState
 
 /**
- * Mesin Parser Protokol OBD2 (ELM327 / STN1170 USB Serial) khusus Kia Rio UB (2012-2016).
+ * OBD2 Protocol Parser Engine (ELM327 / STN1170 USB Serial) for Kia Rio UB (2012-2016).
  *
- * 1. ECU Powertrain (Header 7E0 -> Response 7E8):
+ * 1. Powertrain ECU (Header 7E0 -> Response 7E8):
  *    - PID 010C : Engine RPM              -> ((A * 256) + B) / 4
  *    - PID 010D : Vehicle Speed (km/h)    -> A
  *    - PID 0105 : Engine Coolant Temp (C) -> A - 40
  *    - ATRV     : Battery Voltage         -> "14.1V"
  *
- * 2. BCM / Body Control Module Kia Rio UB (Header 770/7A0 -> Response 778/7A8):
- *    - Service 21 / 22 Extended PID untuk membaca bitmask Pintu (FL, FR, RL, RR, Trunk) & Central Lock.
+ * 2. Kia Rio UB Body Control Module / BCM (Header 770/7A0 -> Response 778/7A8):
+ *    - Service 21 / 22 Extended PIDs for reading per-door bitmasks (FL, FR, RL, RR, Trunk) & Central Lock.
  */
 object ObdCommandEngine {
 
@@ -21,8 +21,8 @@ object ObdCommandEngine {
         "ATE0",     // Echo off
         "ATL0",     // Linefeeds off
         "ATS0",     // Spaces off
-        "ATH1",     // Headers on (penting untuk membedakan balasan ECU 7E8 vs BCM 778)
-        "ATSP6"     // ISO 15765-4 CAN (11 bit ID, 500 kbaud - C-CAN Kia Rio UB)
+        "ATH1",     // Headers on (required to distinguish ECU 7E8 vs BCM 778 frames)
+        "ATSP6"     // ISO 15765-4 CAN (11-bit ID, 500 kbaud - Kia Rio UB C-CAN)
     )
 
     fun parseRpm(hexResponse: String): Int? {
@@ -50,7 +50,7 @@ object ObdCommandEngine {
     }
 
     /**
-     * Dekoder bitmask BCM Kia Rio UB untuk status pintu per titik & Central Lock.
+     * Decodes Kia Rio UB BCM bitmasks for per-door open states & Central Lock status.
      */
     fun parseKiaRioBcmDoors(doorByte: Int, lockByte: Int): Pair<DoorState, Boolean> {
         val doors = DoorState(
