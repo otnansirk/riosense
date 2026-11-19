@@ -40,6 +40,17 @@ enum class KiaRioPaintColor(
     )
 }
 
+data class LightState(
+    val parkingLights: Boolean = false,
+    val lowBeam: Boolean = false,
+    val highBeam: Boolean = false,
+    val fogLights: Boolean = false,
+    val leftTurn: Boolean = false,
+    val rightTurn: Boolean = false,
+    val hazard: Boolean = false,
+    val brake: Boolean = false
+)
+
 data class DoorState(
     val frontLeftOpen: Boolean = false,
     val frontRightOpen: Boolean = false,
@@ -95,6 +106,7 @@ data class VehicleTelemetry(
     val gear: String = "D",
     val centralLocked: Boolean = true,
     val doors: DoorState = DoorState(),
+    val lights: LightState = LightState(),
     val tpms: TpmsState = TpmsState(),
     val paintColor: KiaRioPaintColor = KiaRioPaintColor.SNOW_WHITE_PEARL,
     val speedLockAlarmThresholdKmh: Int = 20,

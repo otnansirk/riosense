@@ -135,6 +135,7 @@ fun RioSenseDashboardScreen(
                     onCoolantChange = { temp -> repository.setCoolantTemp(temp) },
                     onToggleDoor = { code -> repository.toggleDoor(code) },
                     onToggleLock = { repository.toggleCentralLock() },
+                    onToggleLight = { code -> repository.toggleLight(code) },
                     onTirePressureChange = { code, psi -> repository.setTirePressure(code, psi) },
                     onTireTempChange = { code, temp -> repository.setTireTemp(code, temp) },
                     onPaintColorSelect = { color -> repository.setPaintColor(color) },

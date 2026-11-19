@@ -2,6 +2,7 @@ package id.bangsadigital.riosense.data
 
 import id.bangsadigital.riosense.model.DoorState
 import id.bangsadigital.riosense.model.KiaRioPaintColor
+import id.bangsadigital.riosense.model.LightState
 import id.bangsadigital.riosense.model.TireInfo
 import id.bangsadigital.riosense.model.TpmsState
 import id.bangsadigital.riosense.model.VehicleTelemetry
@@ -105,6 +106,30 @@ class VehicleRepository {
 
     fun setPaintColor(color: KiaRioPaintColor) {
         _telemetry.update { it.copy(paintColor = color) }
+    }
+
+    fun toggleLight(lightCode: String) {
+        _telemetry.update { state ->
+            val l = state.lights
+            val updated = when (lightCode) {
+                "PARKING" -> l.copy(parkingLights = !l.parkingLights)
+                "LOW_BEAM" -> l.copy(lowBeam = !l.lowBeam)
+                "HIGH_BEAM" -> l.copy(highBeam = !l.highBeam)
+                "FOG" -> l.copy(fogLights = !l.fogLights)
+                "LEFT_TURN" -> {
+                    val next = !l.leftTurn
+                    l.copy(leftTurn = next, rightTurn = if (next) false else l.rightTurn)
+                }
+                "RIGHT_TURN" -> {
+                    val next = !l.rightTurn
+                    l.copy(rightTurn = next, leftTurn = if (next) false else l.leftTurn)
+                }
+                "HAZARD" -> l.copy(hazard = !l.hazard)
+                "BRAKE" -> l.copy(brake = !l.brake)
+                else -> l
+            }
+            state.copy(lights = updated)
+        }
     }
 
     fun setMinimized(minimized: Boolean) {
