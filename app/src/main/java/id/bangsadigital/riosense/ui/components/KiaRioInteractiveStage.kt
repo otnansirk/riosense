@@ -11,7 +11,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -45,9 +44,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
@@ -274,19 +270,35 @@ fun KiaRioInteractiveStage(
 
     val infiniteTransition = rememberInfiniteTransition(label = "alertPulse")
     val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.30f,
-        targetValue = 0.88f,
+        initialValue = 0.22f,
+        targetValue = 1.0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(850, easing = FastOutSlowInEasing),
+            animation = tween(950, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "pulseAlpha"
     )
 
-    val flLow = telemetry.tpms.frontLeft.pressurePsi < telemetry.tpmsLowThresholdPsi
-    val frLow = telemetry.tpms.frontRight.pressurePsi < telemetry.tpmsLowThresholdPsi
-    val rlLow = telemetry.tpms.rearLeft.pressurePsi < telemetry.tpmsLowThresholdPsi
-    val rrLow = telemetry.tpms.rearRight.pressurePsi < telemetry.tpmsLowThresholdPsi
+    val flAlert = telemetry.tpms.frontLeft.isAlert(
+        telemetry.tpmsLowThresholdPsi,
+        telemetry.tpmsHighThresholdPsi,
+        telemetry.tpmsHighTempC
+    )
+    val frAlert = telemetry.tpms.frontRight.isAlert(
+        telemetry.tpmsLowThresholdPsi,
+        telemetry.tpmsHighThresholdPsi,
+        telemetry.tpmsHighTempC
+    )
+    val rlAlert = telemetry.tpms.rearLeft.isAlert(
+        telemetry.tpmsLowThresholdPsi,
+        telemetry.tpmsHighThresholdPsi,
+        telemetry.tpmsHighTempC
+    )
+    val rrAlert = telemetry.tpms.rearRight.isAlert(
+        telemetry.tpmsLowThresholdPsi,
+        telemetry.tpmsHighThresholdPsi,
+        telemetry.tpmsHighTempC
+    )
 
     val paintColorFilter = remember(telemetry.paintColor) {
         createCarPaintColorFilter(telemetry.paintColor)
@@ -530,35 +542,6 @@ fun KiaRioInteractiveStage(
             }
         }
 
-        // PERSPECTIVE TPMS TIRE WARNING GLOW OVERLAY ON STUDIO FLOOR
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-
-            fun drawTireFloorWarning(cxRatio: Float, cyRatio: Float) {
-                val center = Offset(w * cxRatio, h * cyRatio)
-                val rx = w * 0.12f
-                val ry = h * 0.06f
-                drawOval(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            ObsidianColors.CrimsonAlert.copy(alpha = pulseAlpha * 0.50f),
-                            Color.Transparent
-                        ),
-                        center = center,
-                        radius = rx
-                    ),
-                    topLeft = Offset(center.x - rx, center.y - ry),
-                    size = Size(rx * 2f, ry * 2f)
-                )
-            }
-
-            if (flLow) drawTireFloorWarning(0.28f, 0.66f)
-            if (frLow) drawTireFloorWarning(0.76f, 0.64f)
-            if (rlLow) drawTireFloorWarning(0.32f, 0.78f)
-            if (rrLow) drawTireFloorWarning(0.54f, 0.78f)
-        }
-
         // BORDERLESS MINIMALIST TPMS READOUTS & SLEEK DOOR MICRO-TRIGGERS
         Column(
             modifier = Modifier
@@ -573,7 +556,8 @@ fun KiaRioInteractiveStage(
             ) {
                 TpmsMinimalReadout(
                     tire = telemetry.tpms.frontLeft,
-                    isLow = flLow,
+                    isAlert = flAlert,
+                    blinkAlpha = pulseAlpha,
                     alignRight = false
                 )
 
@@ -592,7 +576,8 @@ fun KiaRioInteractiveStage(
 
                 TpmsMinimalReadout(
                     tire = telemetry.tpms.frontRight,
-                    isLow = frLow,
+                    isAlert = frAlert,
+                    blinkAlpha = pulseAlpha,
                     alignRight = true
                 )
             }
@@ -639,7 +624,8 @@ fun KiaRioInteractiveStage(
             ) {
                 TpmsMinimalReadout(
                     tire = telemetry.tpms.rearLeft,
-                    isLow = rlLow,
+                    isAlert = rlAlert,
+                    blinkAlpha = pulseAlpha,
                     alignRight = false
                 )
 
@@ -651,7 +637,8 @@ fun KiaRioInteractiveStage(
 
                 TpmsMinimalReadout(
                     tire = telemetry.tpms.rearRight,
-                    isLow = rrLow,
+                    isAlert = rrAlert,
+                    blinkAlpha = pulseAlpha,
                     alignRight = true
                 )
             }
@@ -782,10 +769,14 @@ private fun createCarPaintColorFilter(paintColor: KiaRioPaintColor): ColorFilter
 @Composable
 private fun TpmsMinimalReadout(
     tire: TireInfo,
-    isLow: Boolean,
+    isAlert: Boolean,
+    blinkAlpha: Float,
     alignRight: Boolean
 ) {
-    val accentColor = if (isLow) ObsidianColors.CrimsonAlert else Color(0xFF3E4452)
+    val blinkingRed = ObsidianColors.CrimsonAlert.copy(alpha = blinkAlpha)
+    val accentColor = if (isAlert) blinkingRed else Color(0xFF3E4452)
+    val valueColor = if (isAlert) blinkingRed else ObsidianColors.PureSilver
+    val metaColor = if (isAlert) blinkingRed else ObsidianColors.DimSilver
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -810,20 +801,20 @@ private fun TpmsMinimalReadout(
             ) {
                 Text(
                     text = String.format("%.0f", tire.pressurePsi),
-                    color = if (isLow) ObsidianColors.CrimsonAlert else ObsidianColors.PureSilver,
+                    color = valueColor,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Light
                 )
                 Text(
                     text = "psi",
-                    color = ObsidianColors.DimSilver,
+                    color = metaColor,
                     fontSize = 10.sp,
                     modifier = Modifier.padding(bottom = 2.dp)
                 )
             }
             Text(
                 text = "${tire.code} · ${tire.tempC}°C",
-                color = if (isLow) ObsidianColors.CrimsonAlert else ObsidianColors.DimSilver,
+                color = metaColor,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Medium
             )
