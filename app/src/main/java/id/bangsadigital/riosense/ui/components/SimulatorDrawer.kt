@@ -38,6 +38,7 @@ fun SimulatorAndSettingsSheet(
     onCoolantChange: (Int) -> Unit,
     onToggleDoor: (String) -> Unit,
     onToggleLock: () -> Unit,
+    onToggleLight: (String) -> Unit,
     onTirePressureChange: (String, Float) -> Unit,
     onTireTempChange: (String, Int) -> Unit,
     onPaintColorSelect: (KiaRioPaintColor) -> Unit,
@@ -259,7 +260,57 @@ fun SimulatorAndSettingsSheet(
             }
         }
 
-        // 4. TPMS & Speed Lock Threshold
+        // 4. Exterior Lights Simulator (Visible on Front / Back View)
+        Text(
+            text = "Exterior Lighting (Tampak di View Front / Back)",
+            color = ObsidianColors.MutedSilver,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium
+        )
+        val lights = telemetry.lights
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(
+                    Triple("PARKING", "Senja", lights.parkingLights),
+                    Triple("LOW_BEAM", "Low Beam", lights.lowBeam),
+                    Triple("HIGH_BEAM", "High Beam", lights.highBeam),
+                    Triple("FOG", "Foglamp", lights.fogLights)
+                ).forEach { (code, label, active) ->
+                    LightSimulatorPill(
+                        label = label,
+                        active = active,
+                        activeColor = Color(0xFFE3ECFF),
+                        onClick = { onToggleLight(code) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(
+                    Triple("LEFT_TURN", "Sein L", lights.leftTurn),
+                    Triple("RIGHT_TURN", "Sein R", lights.rightTurn),
+                    Triple("HAZARD", "Hazard", lights.hazard),
+                    Triple("BRAKE", "Brake", lights.brake)
+                ).forEach { (code, label, active) ->
+                    val tint = if (code == "BRAKE") ObsidianColors.CrimsonAlert else Color(0xFFFFA726)
+                    LightSimulatorPill(
+                        label = label,
+                        active = active,
+                        activeColor = tint,
+                        onClick = { onToggleLight(code) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
+        // 5. TPMS & Speed Lock Threshold
         Text(
             text = "Rear-Left Tire Pressure ${String.format("%.1f", telemetry.tpms.rearLeft.pressurePsi)} psi",
             color = ObsidianColors.MutedSilver,
@@ -294,6 +345,36 @@ fun SimulatorAndSettingsSheet(
             onValueChange = { onSpeedThresholdChange(it.toInt()) },
             valueRange = 10f..40f,
             colors = monochromeSliderColors
+        )
+    }
+}
+
+@Composable
+private fun LightSimulatorPill(
+    label: String,
+    active: Boolean,
+    activeColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (active) activeColor.copy(alpha = 0.18f) else Color(0xFF161920))
+            .then(
+                if (active) Modifier.border(0.8.dp, activeColor.copy(alpha = 0.65f), RoundedCornerShape(8.dp))
+                else Modifier
+            )
+            .clickable { onClick() }
+            .padding(vertical = 8.dp, horizontal = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            color = if (active) activeColor else ObsidianColors.PureSilver,
+            fontSize = 9.5.sp,
+            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1
         )
     }
 }

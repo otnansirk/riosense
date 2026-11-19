@@ -8,9 +8,11 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,8 +46,14 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -56,11 +64,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import id.bangsadigital.riosense.model.KiaRioPaintColor
+import id.bangsadigital.riosense.model.LightState
 import id.bangsadigital.riosense.model.TireInfo
 import id.bangsadigital.riosense.model.VehicleTelemetry
 import id.bangsadigital.riosense.ui.theme.ObsidianColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -282,6 +292,27 @@ fun KiaRioInteractiveStage(
     val paintColorFilter = remember(telemetry.paintColor) {
         createCarPaintColorFilter(telemetry.paintColor)
     }
+
+    val lights = telemetry.lights
+    val anyTurnActive = lights.leftTurn || lights.rightTurn || lights.hazard
+    var turnFlashOn by remember { mutableStateOf(false) }
+    LaunchedEffect(anyTurnActive) {
+        if (!anyTurnActive) {
+            turnFlashOn = false
+        } else {
+            while (true) {
+                turnFlashOn = true
+                delay(420)
+                turnFlashOn = false
+                delay(380)
+            }
+        }
+    }
+    val turnFlashAlpha by animateFloatAsState(
+        targetValue = if (turnFlashOn) 1f else 0f,
+        animationSpec = tween(durationMillis = 85),
+        label = "turnFlashAlpha"
+    )
 
     val showRightDoorAnim = rightSwingAnim.value > 0.05f && !isUserDraggingTurntable
     val showLeftDoorAnim = leftSwingAnim.value > 0.05f && !isUserDraggingTurntable
@@ -517,6 +548,23 @@ fun KiaRioInteractiveStage(
                             .fillMaxSize()
                             .padding(vertical = 6.dp)
                     )
+                }
+
+                // Opsi A: Overlay simulasi lampu khusus pada sudut Front (59..65) dan Back (161..167)
+                val isFrontView = frameIdx in 59..65
+                val isBackView = frameIdx in 161..167
+                if (isFrontView || isBackView) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(vertical = 6.dp)
+                    ) {
+                        drawExteriorLightsOverlay(
+                            isFrontView = isFrontView,
+                            lights = lights,
+                            turnFlashAlpha = turnFlashAlpha
+                        )
+                    }
                 }
             }
         }
@@ -852,5 +900,191 @@ private fun DoorMicroControl(
             fontSize = 10.sp,
             fontWeight = if (isOpen) FontWeight.SemiBold else FontWeight.Normal
         )
+    }
+}
+
+private fun DrawScope.drawExteriorLightsOverlay(
+    isFrontView: Boolean,
+    lights: LightState,
+    turnFlashAlpha: Float
+) {
+    // Hitung rect tepat gambar 16:9 (ContentScale.Fit) agar titik lampu presisi di segala rasio layar HU
+    val imgAspect = 640f / 360f
+    val boxAspect = size.width / size.height.coerceAtLeast(1f)
+    val drawW: Float
+    val drawH: Float
+    val left: Float
+    val top: Float
+    if (boxAspect > imgAspect) {
+        drawH = size.height
+        drawW = drawH * imgAspect
+        left = (size.width - drawW) * 0.5f
+        top = 0f
+    } else {
+        drawW = size.width
+        drawH = drawW / imgAspect
+        left = 0f
+        top = (size.height - drawH) * 0.5f
+    }
+
+    fun pt(nx: Float, ny: Float) = Offset(left + nx * drawW, top + ny * drawH)
+
+    fun drawLampBloom(
+        nx: Float,
+        ny: Float,
+        radiusRatio: Float,
+        coreColor: Color,
+        haloColor: Color,
+        intensity: Float
+    ) {
+        if (intensity <= 0.01f) return
+        val c = pt(nx, ny)
+        val r = drawW * radiusRatio
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    haloColor.copy(alpha = (0.72f * intensity).coerceIn(0f, 1f)),
+                    haloColor.copy(alpha = (0.28f * intensity).coerceIn(0f, 1f)),
+                    Color.Transparent
+                ),
+                center = c,
+                radius = r
+            ),
+            radius = r,
+            center = c,
+            blendMode = BlendMode.Plus
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    coreColor.copy(alpha = (0.95f * intensity).coerceIn(0f, 1f)),
+                    coreColor.copy(alpha = 0f)
+                ),
+                center = c,
+                radius = r * 0.38f
+            ),
+            radius = r * 0.38f,
+            center = c,
+            blendMode = BlendMode.Plus
+        )
+    }
+
+    fun drawFloorPool(nx: Float, ny: Float, rxRatio: Float, ryRatio: Float, color: Color, alpha: Float) {
+        if (alpha <= 0.01f) return
+        val c = pt(nx, ny)
+        val rx = drawW * rxRatio
+        val ry = drawH * ryRatio
+        drawOval(
+            brush = Brush.radialGradient(
+                colors = listOf(color.copy(alpha = alpha), Color.Transparent),
+                center = c,
+                radius = rx
+            ),
+            topLeft = Offset(c.x - rx, c.y - ry),
+            size = Size(rx * 2f, ry * 2f),
+            blendMode = BlendMode.Plus
+        )
+    }
+
+    fun drawTailLampBar(nx0: Float, ny0: Float, nx1: Float, ny1: Float, glowAlpha: Float, coreAlpha: Float) {
+        val p0 = pt(nx0, ny0)
+        val p1 = pt(nx1, ny1)
+        drawLine(
+            color = Color(0xFFFF1744).copy(alpha = glowAlpha),
+            start = p0,
+            end = p1,
+            strokeWidth = drawH * 0.044f,
+            cap = StrokeCap.Round,
+            blendMode = BlendMode.Plus
+        )
+        drawLine(
+            color = Color(0xFFFF6E6E).copy(alpha = coreAlpha),
+            start = p0,
+            end = p1,
+            strokeWidth = drawH * 0.018f,
+            cap = StrokeCap.Round,
+            blendMode = BlendMode.Plus
+        )
+    }
+
+    if (isFrontView) {
+        // 1. Lampu Senja / Kota (titik pink di bagian bawah-luar cluster headlamp)
+        if (lights.parkingLights) {
+            drawLampBloom(0.3713f, 0.6067f, 0.032f, Color(0xFFFFF8E1), Color(0xFFFFE5B4), 0.78f)
+            drawLampBloom(0.6148f, 0.6067f, 0.032f, Color(0xFFFFF8E1), Color(0xFFFFE5B4), 0.78f)
+        }
+        // 2. Low Beam (titik biru projector luar atas + pendar lantai studio)
+        if (lights.lowBeam) {
+            drawFloorPool(0.3570f, 0.855f, 0.11f, 0.055f, Color(0xFFEBF3FF), 0.22f)
+            drawFloorPool(0.6273f, 0.855f, 0.11f, 0.055f, Color(0xFFEBF3FF), 0.22f)
+            drawLampBloom(0.3570f, 0.5569f, 0.048f, Color.White, Color(0xFFD6E8FF), 0.95f)
+            drawLampBloom(0.6273f, 0.5569f, 0.048f, Color.White, Color(0xFFD6E8FF), 0.95f)
+        }
+        // 3. High Beam (titik hijau-toska tengah + sorot lantai lebih luas)
+        if (lights.highBeam) {
+            drawFloorPool(0.495f, 0.865f, 0.22f, 0.075f, Color(0xFFF2F7FF), 0.30f)
+            drawLampBloom(0.3800f, 0.5780f, 0.062f, Color.White, Color(0xFFCCE0FF), 1.0f)
+            drawLampBloom(0.6045f, 0.5780f, 0.062f, Color.White, Color(0xFFCCE0FF), 1.0f)
+        }
+        // 4. Foglamp (titik ungu di kisi-kisi bumper bawah kanan & kiri)
+        if (lights.fogLights) {
+            drawFloorPool(0.3555f, 0.830f, 0.085f, 0.045f, Color(0xFFFFF4D2), 0.20f)
+            drawFloorPool(0.6274f, 0.830f, 0.085f, 0.045f, Color(0xFFFFF4D2), 0.20f)
+            drawLampBloom(0.3555f, 0.7263f, 0.040f, Color(0xFFFFF9E6), Color(0xFFFFE082), 0.92f)
+            drawLampBloom(0.6274f, 0.7321f, 0.040f, Color(0xFFFFF9E6), Color(0xFFFFE082), 0.92f)
+        }
+        // 5. Sein & Hazard (Tampak Depan: Kanan Mobil = Kiri Layar, Kiri Mobil = Kanan Layar)
+        //    Setiap sisi menyalakan titik sudut dalam headlamp + repeater spion secara sinkron.
+        val frontRightBlink = if (lights.rightTurn || lights.hazard) turnFlashAlpha else 0f
+        val frontLeftBlink = if (lights.leftTurn || lights.hazard) turnFlashAlpha else 0f
+        if (frontRightBlink > 0.01f) {
+            drawLampBloom(0.3970f, 0.5960f, 0.032f, Color(0xFFFFD54F), Color(0xFFFF8F00), frontRightBlink)
+            drawLampBloom(0.3321f, 0.4237f, 0.018f, Color(0xFFFFD54F), Color(0xFFFF8F00), frontRightBlink * 0.95f)
+        }
+        if (frontLeftBlink > 0.01f) {
+            drawLampBloom(0.5900f, 0.5960f, 0.032f, Color(0xFFFFD54F), Color(0xFFFF8F00), frontLeftBlink)
+            drawLampBloom(0.6711f, 0.4208f, 0.018f, Color(0xFFFFD54F), Color(0xFFFF8F00), frontLeftBlink * 0.95f)
+        }
+    } else {
+        // BACK VIEW: Lampu Senja menyalakan merah redup di stoplamp; Rem menyalakan jauh lebih terang + HMSL
+        if (lights.parkingLights && !lights.brake) {
+            drawLampBloom(0.3879f, 0.4479f, 0.026f, Color(0xFFFF8A80), Color(0xFFD50000), 0.45f)
+            drawLampBloom(0.6377f, 0.4538f, 0.026f, Color(0xFFFF8A80), Color(0xFFD50000), 0.45f)
+            drawTailLampBar(0.345f, 0.476f, 0.400f, 0.474f, glowAlpha = 0.28f, coreAlpha = 0.35f)
+            drawTailLampBar(0.622f, 0.474f, 0.677f, 0.477f, glowAlpha = 0.28f, coreAlpha = 0.35f)
+        }
+        if (lights.brake) {
+            drawLampBloom(0.3714f, 0.4752f, 0.058f, Color(0xFFFF9E80), Color(0xFFFF1744), 1.0f)
+            drawLampBloom(0.6503f, 0.4767f, 0.058f, Color(0xFFFF9E80), Color(0xFFFF1744), 1.0f)
+            drawTailLampBar(0.344f, 0.476f, 0.402f, 0.474f, glowAlpha = 0.72f, coreAlpha = 0.95f)
+            drawTailLampBar(0.620f, 0.474f, 0.678f, 0.477f, glowAlpha = 0.72f, coreAlpha = 0.95f)
+            // High-Mount Stop Lamp (HMSL) bar merah di bawah spoiler belakang
+            val hStart = pt(0.484f, 0.294f)
+            val hEnd = pt(0.542f, 0.294f)
+            drawLine(
+                color = Color(0xFFFF1744).copy(alpha = 0.65f),
+                start = hStart,
+                end = hEnd,
+                strokeWidth = drawH * 0.022f,
+                cap = StrokeCap.Round,
+                blendMode = BlendMode.Plus
+            )
+            drawLine(
+                color = Color(0xFFFF9E80),
+                start = hStart,
+                end = hEnd,
+                strokeWidth = drawH * 0.009f,
+                cap = StrokeCap.Round,
+                blendMode = BlendMode.Plus
+            )
+        }
+        val backLeftBlink = if (lights.leftTurn || lights.hazard) turnFlashAlpha else 0f
+        val backRightBlink = if (lights.rightTurn || lights.hazard) turnFlashAlpha else 0f
+        if (backLeftBlink > 0.01f) {
+            drawLampBloom(0.3626f, 0.4386f, 0.032f, Color(0xFFFFD54F), Color(0xFFFF8F00), backLeftBlink)
+        }
+        if (backRightBlink > 0.01f) {
+            drawLampBloom(0.6614f, 0.4382f, 0.032f, Color(0xFFFFD54F), Color(0xFFFF8F00), backRightBlink)
+        }
     }
 }
