@@ -1,17 +1,21 @@
 package id.bangsadigital.riosense
 
 import android.app.PictureInPictureParams
-import android.media.AudioManager
-import android.media.ToneGenerator
+import android.media.AudioAttributes
+import android.media.SoundPool
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import id.bangsadigital.riosense.data.VehicleRepository
 import id.bangsadigital.riosense.ui.RioSenseDashboardScreen
 import id.bangsadigital.riosense.ui.theme.RioSenseObsidianTheme
@@ -30,24 +34,47 @@ class MainActivity : ComponentActivity() {
         setContent {
             val telemetry by vehicleRepository.telemetry.collectAsState()
 
-            // Automotive alarm chime beep on Door Open / Speed Unlock / TPMS Alert / Coolant Overheat
+            // Preload authentic Kia Rio alarm chime once in SoundPool (~13 KB mono asset, <5ms latency)
+            var alarmLoaded by remember { mutableStateOf(false) }
+            val alarmEngine = remember {
+                val attrs = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+                val pool = SoundPool.Builder()
+                    .setMaxStreams(1)
+                    .setAudioAttributes(attrs)
+                    .build()
+                pool.setOnLoadCompleteListener { _, _, status ->
+                    if (status == 0) alarmLoaded = true
+                }
+                val id = pool.load(this, R.raw.kia_rio_alarm, 1)
+                pool to id
+            }
+
+            DisposableEffect(Unit) {
+                onDispose {
+                    alarmEngine.first.release()
+                }
+            }
+
+            // Play Kia Rio OEM chime periodically on Door Open / Speed Unlock / TPMS Alert / Coolant Overheat
             LaunchedEffect(
+                alarmLoaded,
                 telemetry.hasAnyCriticalAlert,
                 telemetry.audioAlarmMuted,
                 telemetry.isSpeedUnlockAlarm
             ) {
-                if (telemetry.hasAnyCriticalAlert && !telemetry.audioAlarmMuted) {
-                    val toneGen = runCatching {
-                        ToneGenerator(AudioManager.STREAM_ALARM, 80)
-                    }.getOrNull()
-
+                if (alarmLoaded && telemetry.hasAnyCriticalAlert && !telemetry.audioAlarmMuted) {
+                    val (pool, soundId) = alarmEngine
+                    var streamId = 0
                     try {
                         while (telemetry.hasAnyCriticalAlert && !telemetry.audioAlarmMuted) {
-                            toneGen?.startTone(ToneGenerator.TONE_PROP_BEEP2, 220)
+                            streamId = pool.play(soundId, 0.90f, 0.90f, 1, 0, 1.0f)
                             delay(2400L)
                         }
                     } finally {
-                        toneGen?.release()
+                        if (streamId != 0) pool.stop(streamId)
                     }
                 }
             }
