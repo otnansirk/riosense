@@ -10,13 +10,13 @@ ASSETS_SEQ="$ROOT/app/src/main/assets/car_sequences"
 FILTER_TURNTABLE="scale=640:360:flags=lanczos,unsharp=3:3:0.55:3:3:0.0"
 FILTER_STD="scale=768:432:flags=lanczos,unsharp=3:3:0.55:3:3:0.0"
 
-# Ekstrak turntable_360 jika belum ada PNG transparan
+# Extract turntable_360 transparent PNG frames if missing
 if [ ! -f "$ASSETS_SEQ/turntable_360/turntable_179.png" ]; then
-  echo "🧹 Menghapus seluruh asset turntable_360 sebelumnya..."
+  echo "🧹 Removing previous turntable_360 assets..."
   rm -rf "$DOCS_SEQ/turntable_360" "$ASSETS_SEQ/turntable_360"
   mkdir -p "$DOCS_SEQ/turntable_360" "$ASSETS_SEQ/turntable_360"
 
-  echo "🔄 1. Mengekstrak 180 Frame Transparent PNG (2°/Frame: 000..179, exact 360° loop frame 4..418)..."
+  echo "🔄 1. Extracting 180 Transparent PNG frames (2°/frame: 000..179, exact 360° loop frames 4..418)..."
   TMP_RAW=$(mktemp -d)
   "$FFMPEG" -y -v error -i "$VID_DIR/Kia_Rio_hatchback_rotating.mp4" \
     -vf "trim=start_frame=4:end_frame=419,setpts=PTS-STARTPTS,fps=180/17.2917,$FILTER_TURNTABLE" \
@@ -26,16 +26,16 @@ if [ ! -f "$ASSETS_SEQ/turntable_360/turntable_179.png" ]; then
     "$ROOT/scripts/TurntableAlphaProcessor.java" \
     "$TMP_RAW" "$DOCS_SEQ/turntable_360" "$ASSETS_SEQ/turntable_360" 180
   rm -rf "$TMP_RAW"
-  echo "   ✅ 180 Frame Transparent PNG (turntable_000.png .. turntable_179.png) selesai!"
+  echo "   ✅ 180 Transparent PNG frames (turntable_000.png .. turntable_179.png) ready!"
 fi
 
-# Ekstrak sekuens pintu & bagasi transparent PNG jika belum ada
+# Extract door & tailgate transparent PNG sequences if missing
 if [ ! -f "$ASSETS_SEQ/doors/trunk_19.png" ]; then
-  echo "🧹 Menghapus seluruh asset doors (.jpg) sebelumnya..."
+  echo "🧹 Removing previous doors assets..."
   rm -rf "$DOCS_SEQ/doors" "$ASSETS_SEQ/doors"
   mkdir -p "$DOCS_SEQ/doors" "$ASSETS_SEQ/doors"
 
-  echo "🚪 2. Mengekstrak 7 Sekuens Animasi Pintu & Bagasi Transparent PNG (Masing-Masing 20 Frame Halus)..."
+  echo "🚪 2. Extracting 7 Door & Tailgate Transparent PNG Sequences (20 frames each)..."
   extract_seq_window() {
     local vid="$1"
     local prefix="$2"
@@ -53,7 +53,7 @@ if [ ! -f "$ASSETS_SEQ/doors/trunk_19.png" ]; then
       "$ROOT/scripts/TurntableAlphaProcessor.java" \
       "$tmp_door" "$DOCS_SEQ/doors" "$ASSETS_SEQ/doors" 20 --doors "$prefix" "$hflip"
     rm -rf "$tmp_door"
-    echo "   ✅ Sekuens $prefix (20 transparent PNG: ${t_start}s -> ${t_end}s) selesai"
+    echo "   ✅ Sequence $prefix (20 transparent PNGs: ${t_start}s -> ${t_end}s) ready"
   }
 
   extract_seq_window "$VID_DIR/Kia_Rio_door_front_right_opening.mp4" "fr" 1.35 3.30 "false"
@@ -65,4 +65,4 @@ if [ ! -f "$ASSETS_SEQ/doors/trunk_19.png" ]; then
   extract_seq_window "$VID_DIR/Kia_Rio_tailgate_opening.mp4" "trunk" 1.00 5.90 "true"
 fi
 
-echo "✅ Seluruh 180 frame turntable + 140 frame doors (Transparent RGBA PNG) siap!"
+echo "✅ All 180 turntable frames + 140 door frames (Transparent RGBA PNG) ready!"

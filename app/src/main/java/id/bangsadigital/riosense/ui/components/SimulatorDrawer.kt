@@ -262,7 +262,7 @@ fun SimulatorAndSettingsSheet(
 
         // 4. Exterior Lights Simulator (Visible on Front / Back View)
         Text(
-            text = "Exterior Lighting (Tampak di View Front / Back)",
+            text = "Exterior Lighting (Visible on Front / Back View)",
             color = ObsidianColors.MutedSilver,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium
@@ -274,10 +274,10 @@ fun SimulatorAndSettingsSheet(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 listOf(
-                    Triple("PARKING", "Senja", lights.parkingLights),
+                    Triple("PARKING", "Position", lights.parkingLights),
                     Triple("LOW_BEAM", "Low Beam", lights.lowBeam),
                     Triple("HIGH_BEAM", "High Beam", lights.highBeam),
-                    Triple("FOG", "Foglamp", lights.fogLights)
+                    Triple("FOG", "Fog Lamp", lights.fogLights)
                 ).forEach { (code, label, active) ->
                     LightSimulatorPill(
                         label = label,
@@ -293,8 +293,8 @@ fun SimulatorAndSettingsSheet(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 listOf(
-                    Triple("LEFT_TURN", "Sein L", lights.leftTurn),
-                    Triple("RIGHT_TURN", "Sein R", lights.rightTurn),
+                    Triple("LEFT_TURN", "Turn L", lights.leftTurn),
+                    Triple("RIGHT_TURN", "Turn R", lights.rightTurn),
                     Triple("HAZARD", "Hazard", lights.hazard),
                     Triple("BRAKE", "Brake", lights.brake)
                 ).forEach { (code, label, active) ->

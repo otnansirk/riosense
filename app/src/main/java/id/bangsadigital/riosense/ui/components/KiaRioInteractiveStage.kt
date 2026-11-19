@@ -95,15 +95,15 @@ fun KiaRioInteractiveStage(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Semua frame turntable_360 dan doors menggunakan Transparent PNG (ARGB_8888 untuk channel alpha utuh)
+    // All turntable_360 and door assets use Transparent PNG (ARGB_8888 to preserve full alpha)
     val decodeOpts = remember {
         BitmapFactory.Options().apply {
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
     }
 
-    // 1. Smart Thread-Safe LRU Frame Cache untuk 180 Frame Transparent PNG (2° per Frame: turntable_000.png .. turntable_179.png)
-    //    Kapasitas 90 frame (~80 MB RAM saat aktif) + auto-evict saat minimize agar HU RAM 4GB tetap lega.
+    // 1. Thread-Safe LRU Frame Cache for 180 Transparent PNGs (2 deg/frame: turntable_000.png .. turntable_179.png)
+    //    Capacity of 90 frames (~80 MB RAM active) + auto-evict on minimize to keep 4GB Head Units responsive.
     val turntableCache = remember {
         object : LruCache<Int, ImageBitmap>(90) {}
     }
@@ -127,11 +127,11 @@ fun KiaRioInteractiveStage(
         return loaded
     }
 
-    // State putaran 360° (0f .. 180f, setiap 1.0f = 2° rotasi mulus!)
+    // 360° orbit state (0f .. 180f, each 1.0f = 2° smooth step)
     val turntableAnim = remember { Animatable(0f) }
     val activeTurntableIdx = ((turntableAnim.value.roundToInt() % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
 
-    // Sliding-window async prefetcher (±35 frame) di background agar putaran & wrap 179->0 tetap 60 FPS tanpa jeda
+    // Sliding-window background prefetcher (±35 frames) for zero-stutter 60 FPS rotation & 179->0 wraparound
     LaunchedEffect(activeTurntableIdx) {
         withContext(Dispatchers.IO) {
             for (offset in 0..35) {
@@ -143,7 +143,7 @@ fun KiaRioInteractiveStage(
         }
     }
 
-    // 2. Lazy LRU Cache untuk 7 Sekuens Animasi Pintu & Bagasi (Max 45 frame di RAM ~28 MB, hemat 60 MB saat boot!)
+    // 2. Lazy LRU Cache for 7 Door & Tailgate Swing Sequences (max 45 frames in RAM ~28 MB)
     val doorCache = remember {
         object : LruCache<String, ImageBitmap>(45) {}
     }
@@ -168,7 +168,7 @@ fun KiaRioInteractiveStage(
         return loaded
     }
 
-    // Kosongkan cache gambar mobil otomatis saat Stage dilepas (mode Minimize) agar Maps/Spotify tetap lega
+    // Evict cached car bitmaps when stage leaves composition (Minimize mode) to free RAM for Maps/Spotify
     DisposableEffect(Unit) {
         onDispose {
             synchronized(turntableCache) { turntableCache.evictAll() }
@@ -197,7 +197,7 @@ fun KiaRioInteractiveStage(
     val leftOpenNow = d.frontLeftOpen || d.rearLeftOpen
     val trunkOpenNow = d.trunkOpen
 
-    // Mode Auto Rotate 360°: putar halus terus-menerus mengikuti VSync layar (~16 frame/dtk)
+    // Auto Rotate 360° Mode: advance smoothly on display VSync (~16 frames/sec)
     LaunchedEffect(selectedViewMode) {
         if (selectedViewMode == CarViewMode.AUTO_ROTATE) {
             var lastNanos = withFrameNanos { it }
@@ -210,7 +210,7 @@ fun KiaRioInteractiveStage(
         }
     }
 
-    // Animasi progres ayunan pintu Kanan, Kiri, dan Bagasi (0f = tertutup, 19f = terbuka penuh)
+    // Right, Left, and Tailgate swing animation progress (0f = closed, 19f = fully open)
     val rightSwingAnim = remember { Animatable(if (rightOpenNow) 19f else 0f) }
     val leftSwingAnim = remember { Animatable(if (leftOpenNow) 19f else 0f) }
     val trunkSwingAnim = remember { Animatable(if (trunkOpenNow) 19f else 0f) }
@@ -226,7 +226,7 @@ fun KiaRioInteractiveStage(
     else if (d.frontLeftOpen) activeLeftKey = "fl"
     else if (d.rearLeftOpen) activeLeftKey = "rl"
 
-    // Jalankan animasi Buka (0 -> 19) dan Tutup (19 -> 0) secara mulus dengan prefetch asinkron
+    // Run smooth open (0 -> 19) and close (19 -> 0) swing animations with async preloading
     LaunchedEffect(d.frontRightOpen, d.rearRightOpen, d.frontLeftOpen, d.rearLeftOpen, d.trunkOpen) {
         withContext(Dispatchers.IO) {
             if (rightOpenNow || rightSwingAnim.value > 0.05f) {
@@ -243,7 +243,7 @@ fun KiaRioInteractiveStage(
         if (rightOpenNow || leftOpenNow || trunkOpenNow) {
             isUserDraggingTurntable = false
             selectedViewMode = CarViewMode.BACK_45
-            // Jika mobil sedang di sudut lain, putar balik cepat ke titik awal (0°) sebelum pintu mengayun buka
+            // Smoothly return car to hero angle (0°) before playing door swing animation
             val currentMod = ((turntableAnim.value % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
             if (currentMod > 1.0f && currentMod < TURNTABLE_COUNT - 1.0f) {
                 val targetZero = if (currentMod <= TURNTABLE_COUNT / 2f) 0f else TURNTABLE_COUNT.toFloat()
@@ -346,7 +346,7 @@ fun KiaRioInteractiveStage(
                     ) { change, dragAmount ->
                         change.consume()
                         scope.launch {
-                            // 180 frame (2 derajat per frame): geser ~514px = 360 derajat penuh!
+                            // 180 frames (2 deg/frame): ~514px drag spans a full 360° orbit
                             turntableAnim.snapTo(turntableAnim.value + dragAmount.x * 0.35f)
                         }
                     }
@@ -364,7 +364,7 @@ fun KiaRioInteractiveStage(
                 }
         ) {
         when {
-            // KASUS 1: Multi-Panel Aktif Bersamaan (Misal Kiri + Kanan, atau Pintu + Bagasi)
+            // CASE 1: Multiple Panels Open Simultaneously (Left + Right doors or Doors + Tailgate)
             activePanelsCount >= 2 -> {
                 Row(
                     modifier = Modifier
@@ -483,7 +483,7 @@ fun KiaRioInteractiveStage(
                 }
             }
 
-            // KASUS 2: Sisi Kanan saja sedang mengayun buka / tutup (FR, RR, atau FR+RR)
+            // CASE 2: Right Side Swing Animation Only (FR, RR, or FR+RR)
             showRightDoorAnim -> {
                 val rightIdx = rightSwingAnim.value.roundToInt().coerceIn(0, DOOR_SEQ_MAX_INDEX)
                 val rightBmp = getOrLoadDoorFrame(activeRightKey, rightIdx)
@@ -500,7 +500,7 @@ fun KiaRioInteractiveStage(
                 }
             }
 
-            // KASUS 3: Sisi Kiri saja sedang mengayun buka / tutup (FL, RL, atau FL+RL)
+            // CASE 3: Left Side Swing Animation Only (FL, RL, or FL+RL)
             showLeftDoorAnim -> {
                 val leftIdx = leftSwingAnim.value.roundToInt().coerceIn(0, DOOR_SEQ_MAX_INDEX)
                 val leftBmp = getOrLoadDoorFrame(activeLeftKey, leftIdx)
@@ -517,7 +517,7 @@ fun KiaRioInteractiveStage(
                 }
             }
 
-            // KASUS 4: Bagasi Belakang (Tailgate) saja sedang mengayun buka / tutup
+            // CASE 4: Rear Tailgate Swing Animation Only
             showTrunkAnim -> {
                 val trunkIdx = trunkSwingAnim.value.roundToInt().coerceIn(0, DOOR_SEQ_MAX_INDEX)
                 val trunkBmp = getOrLoadDoorFrame("trunk", trunkIdx)
@@ -534,7 +534,7 @@ fun KiaRioInteractiveStage(
                 }
             }
 
-            // KASUS 5: Mode Putaran 360° Transparent PNG 2°/Frame (180 Frame: 000 s/d 179)
+            // CASE 5: 360° Turntable Mode — Transparent PNG 2°/Frame (180 frames: 000..179)
             else -> {
                 val frameIdx = ((turntableAnim.value.roundToInt() % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
                 val bmp = getOrLoadTurntableFrame(frameIdx)
@@ -550,7 +550,7 @@ fun KiaRioInteractiveStage(
                     )
                 }
 
-                // Opsi A: Overlay simulasi lampu khusus pada sudut Front (59..65) dan Back (161..167)
+                // Option A: Precision exterior light overlay on Front (59..65) and Back (161..167) views
                 val isFrontView = frameIdx in 59..65
                 val isBackView = frameIdx in 161..167
                 if (isFrontView || isBackView) {
@@ -908,7 +908,7 @@ private fun DrawScope.drawExteriorLightsOverlay(
     lights: LightState,
     turnFlashAlpha: Float
 ) {
-    // Hitung rect tepat gambar 16:9 (ContentScale.Fit) agar titik lampu presisi di segala rasio layar HU
+    // Compute exact fitted 16:9 image rect (ContentScale.Fit) for pixel-accurate alignment across aspect ratios
     val imgAspect = 640f / 360f
     val boxAspect = size.width / size.height.coerceAtLeast(1f)
     val drawW: Float
@@ -1008,33 +1008,32 @@ private fun DrawScope.drawExteriorLightsOverlay(
     }
 
     if (isFrontView) {
-        // 1. Lampu Senja / Kota (titik pink di bagian bawah-luar cluster headlamp)
+        // 1. Position / City Lights (lower-outer headlamp lens points)
         if (lights.parkingLights) {
             drawLampBloom(0.3713f, 0.6067f, 0.032f, Color(0xFFFFF8E1), Color(0xFFFFE5B4), 0.78f)
             drawLampBloom(0.6148f, 0.6067f, 0.032f, Color(0xFFFFF8E1), Color(0xFFFFE5B4), 0.78f)
         }
-        // 2. Low Beam (titik biru projector luar atas + pendar lantai studio)
+        // 2. Low Beam (outer-upper projector bowls + subtle studio floor pool)
         if (lights.lowBeam) {
             drawFloorPool(0.3570f, 0.855f, 0.11f, 0.055f, Color(0xFFEBF3FF), 0.22f)
             drawFloorPool(0.6273f, 0.855f, 0.11f, 0.055f, Color(0xFFEBF3FF), 0.22f)
             drawLampBloom(0.3570f, 0.5569f, 0.048f, Color.White, Color(0xFFD6E8FF), 0.95f)
             drawLampBloom(0.6273f, 0.5569f, 0.048f, Color.White, Color(0xFFD6E8FF), 0.95f)
         }
-        // 3. High Beam (titik hijau-toska tengah + sorot lantai lebih luas)
+        // 3. High Beam (inner-center high-intensity reflectors + wider floor spread)
         if (lights.highBeam) {
             drawFloorPool(0.495f, 0.865f, 0.22f, 0.075f, Color(0xFFF2F7FF), 0.30f)
             drawLampBloom(0.3800f, 0.5780f, 0.062f, Color.White, Color(0xFFCCE0FF), 1.0f)
             drawLampBloom(0.6045f, 0.5780f, 0.062f, Color.White, Color(0xFFCCE0FF), 1.0f)
         }
-        // 4. Foglamp (titik ungu di kisi-kisi bumper bawah kanan & kiri)
+        // 4. Fog Lamps (lower left/right bumper grilles)
         if (lights.fogLights) {
             drawFloorPool(0.3555f, 0.830f, 0.085f, 0.045f, Color(0xFFFFF4D2), 0.20f)
             drawFloorPool(0.6274f, 0.830f, 0.085f, 0.045f, Color(0xFFFFF4D2), 0.20f)
             drawLampBloom(0.3555f, 0.7263f, 0.040f, Color(0xFFFFF9E6), Color(0xFFFFE082), 0.92f)
             drawLampBloom(0.6274f, 0.7321f, 0.040f, Color(0xFFFFF9E6), Color(0xFFFFE082), 0.92f)
         }
-        // 5. Sein & Hazard (Tampak Depan: Kanan Mobil = Kiri Layar, Kiri Mobil = Kanan Layar)
-        //    Setiap sisi menyalakan titik sudut dalam headlamp + repeater spion secara sinkron.
+        // 5. Turn Signals & Hazard (Front view: Driver's Right = Screen Left, Driver's Left = Screen Right)
         val frontRightBlink = if (lights.rightTurn || lights.hazard) turnFlashAlpha else 0f
         val frontLeftBlink = if (lights.leftTurn || lights.hazard) turnFlashAlpha else 0f
         if (frontRightBlink > 0.01f) {
@@ -1046,7 +1045,7 @@ private fun DrawScope.drawExteriorLightsOverlay(
             drawLampBloom(0.6711f, 0.4208f, 0.018f, Color(0xFFFFD54F), Color(0xFFFF8F00), frontLeftBlink * 0.95f)
         }
     } else {
-        // BACK VIEW: Lampu Senja menyalakan merah redup di stoplamp; Rem menyalakan jauh lebih terang + HMSL
+        // BACK VIEW: Position lights illuminate taillights dimly in red; Brake illuminates brightly + HMSL
         if (lights.parkingLights && !lights.brake) {
             drawLampBloom(0.3879f, 0.4479f, 0.026f, Color(0xFFFF8A80), Color(0xFFD50000), 0.45f)
             drawLampBloom(0.6377f, 0.4538f, 0.026f, Color(0xFFFF8A80), Color(0xFFD50000), 0.45f)
@@ -1058,7 +1057,7 @@ private fun DrawScope.drawExteriorLightsOverlay(
             drawLampBloom(0.6503f, 0.4767f, 0.058f, Color(0xFFFF9E80), Color(0xFFFF1744), 1.0f)
             drawTailLampBar(0.344f, 0.476f, 0.402f, 0.474f, glowAlpha = 0.72f, coreAlpha = 0.95f)
             drawTailLampBar(0.620f, 0.474f, 0.678f, 0.477f, glowAlpha = 0.72f, coreAlpha = 0.95f)
-            // High-Mount Stop Lamp (HMSL) bar merah di bawah spoiler belakang
+            // High-Mount Stop Lamp (HMSL) red LED bar beneath rear spoiler
             val hStart = pt(0.484f, 0.294f)
             val hEnd = pt(0.542f, 0.294f)
             drawLine(
