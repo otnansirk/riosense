@@ -279,27 +279,6 @@ fun KiaRioInteractiveStage(
         label = "pulseAlpha"
     )
 
-    val flAlert = telemetry.tpms.frontLeft.isAlert(
-        telemetry.tpmsLowThresholdPsi,
-        telemetry.tpmsHighThresholdPsi,
-        telemetry.tpmsHighTempC
-    )
-    val frAlert = telemetry.tpms.frontRight.isAlert(
-        telemetry.tpmsLowThresholdPsi,
-        telemetry.tpmsHighThresholdPsi,
-        telemetry.tpmsHighTempC
-    )
-    val rlAlert = telemetry.tpms.rearLeft.isAlert(
-        telemetry.tpmsLowThresholdPsi,
-        telemetry.tpmsHighThresholdPsi,
-        telemetry.tpmsHighTempC
-    )
-    val rrAlert = telemetry.tpms.rearRight.isAlert(
-        telemetry.tpmsLowThresholdPsi,
-        telemetry.tpmsHighThresholdPsi,
-        telemetry.tpmsHighTempC
-    )
-
     val paintColorFilter = remember(telemetry.paintColor) {
         createCarPaintColorFilter(telemetry.paintColor)
     }
@@ -556,7 +535,7 @@ fun KiaRioInteractiveStage(
             ) {
                 TpmsMinimalReadout(
                     tire = telemetry.tpms.frontLeft,
-                    isAlert = flAlert,
+                    telemetry = telemetry,
                     blinkAlpha = pulseAlpha,
                     alignRight = false
                 )
@@ -576,7 +555,7 @@ fun KiaRioInteractiveStage(
 
                 TpmsMinimalReadout(
                     tire = telemetry.tpms.frontRight,
-                    isAlert = frAlert,
+                    telemetry = telemetry,
                     blinkAlpha = pulseAlpha,
                     alignRight = true
                 )
@@ -624,7 +603,7 @@ fun KiaRioInteractiveStage(
             ) {
                 TpmsMinimalReadout(
                     tire = telemetry.tpms.rearLeft,
-                    isAlert = rlAlert,
+                    telemetry = telemetry,
                     blinkAlpha = pulseAlpha,
                     alignRight = false
                 )
@@ -637,7 +616,7 @@ fun KiaRioInteractiveStage(
 
                 TpmsMinimalReadout(
                     tire = telemetry.tpms.rearRight,
-                    isAlert = rrAlert,
+                    telemetry = telemetry,
                     blinkAlpha = pulseAlpha,
                     alignRight = true
                 )
@@ -769,14 +748,18 @@ private fun createCarPaintColorFilter(paintColor: KiaRioPaintColor): ColorFilter
 @Composable
 private fun TpmsMinimalReadout(
     tire: TireInfo,
-    isAlert: Boolean,
+    telemetry: VehicleTelemetry,
     blinkAlpha: Float,
     alignRight: Boolean
 ) {
+    val isPressureAlert = tire.isPressureAlert(telemetry.tpmsLowThresholdPsi, telemetry.tpmsHighThresholdPsi)
+    val isTempAlert = tire.isTempAlert(telemetry.tpmsHighTempC)
+    val hasAnyAlert = isPressureAlert || isTempAlert
     val blinkingRed = ObsidianColors.CrimsonAlert.copy(alpha = blinkAlpha)
-    val accentColor = if (isAlert) blinkingRed else Color(0xFF3E4452)
-    val valueColor = if (isAlert) blinkingRed else ObsidianColors.PureSilver
-    val metaColor = if (isAlert) blinkingRed else ObsidianColors.DimSilver
+    val accentColor = if (hasAnyAlert) blinkingRed else Color(0xFF3E4452)
+    val psiValueColor = if (isPressureAlert) blinkingRed else ObsidianColors.PureSilver
+    val psiUnitColor = if (isPressureAlert) blinkingRed else ObsidianColors.DimSilver
+    val tempColor = if (isTempAlert) blinkingRed else ObsidianColors.DimSilver
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -801,23 +784,31 @@ private fun TpmsMinimalReadout(
             ) {
                 Text(
                     text = String.format("%.0f", tire.pressurePsi),
-                    color = valueColor,
+                    color = psiValueColor,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Light
                 )
                 Text(
                     text = "psi",
-                    color = metaColor,
+                    color = psiUnitColor,
                     fontSize = 10.sp,
                     modifier = Modifier.padding(bottom = 2.dp)
                 )
             }
-            Text(
-                text = "${tire.code} · ${tire.tempC}°C",
-                color = metaColor,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Medium
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "${tire.code} · ",
+                    color = ObsidianColors.DimSilver,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "${tire.tempC}°C",
+                    color = tempColor,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
 
         if (alignRight) {

@@ -65,8 +65,14 @@ data class TireInfo(
     val pressurePsi: Float,
     val tempC: Int
 ) {
+    fun isPressureAlert(lowPsi: Float, highPsi: Float): Boolean =
+        pressurePsi < lowPsi || pressurePsi > highPsi
+
+    fun isTempAlert(highTempC: Int): Boolean =
+        tempC >= highTempC
+
     fun isAlert(lowPsi: Float, highPsi: Float, highTempC: Int): Boolean =
-        pressurePsi < lowPsi || pressurePsi > highPsi || tempC >= highTempC
+        isPressureAlert(lowPsi, highPsi) || isTempAlert(highTempC)
 }
 
 data class TpmsState(
@@ -124,12 +130,17 @@ data class VehicleTelemetry(
                 add("ALARM KEAMANAN: Door Lock Belum Terkunci pada Kecepatan $speedKmh km/h (> $speedLockAlarmThresholdKmh km/h)!")
             }
             alertTires.forEach { tire ->
-                val reason = when {
-                    tire.pressurePsi < tpmsLowThresholdPsi -> "Tekanan Rendah (${String.format("%.1f", tire.pressurePsi)} PSI)"
-                    tire.pressurePsi > tpmsHighThresholdPsi -> "Tekanan Berlebih (${String.format("%.1f", tire.pressurePsi)} PSI)"
-                    else -> "Suhu Ban Tinggi (${tire.tempC}°C)"
+                val parts = buildList {
+                    if (tire.pressurePsi < tpmsLowThresholdPsi) {
+                        add("Tekanan Rendah (${String.format("%.1f", tire.pressurePsi)} PSI)")
+                    } else if (tire.pressurePsi > tpmsHighThresholdPsi) {
+                        add("Tekanan Berlebih (${String.format("%.1f", tire.pressurePsi)} PSI)")
+                    }
+                    if (tire.tempC >= tpmsHighTempC) {
+                        add("Suhu Ban Tinggi (${tire.tempC}°C)")
+                    }
                 }
-                add("TPMS ALERT: Ban ${tire.label} (${tire.code}) $reason!")
+                add("TPMS ALERT: Ban ${tire.label} (${tire.code}) ${parts.joinToString(" & ")}!")
             }
             if (isCoolantOverheat) {
                 add("ENGINE OVERHEAT: Suhu Coolant Tinggi ($coolantTempC°C)!")

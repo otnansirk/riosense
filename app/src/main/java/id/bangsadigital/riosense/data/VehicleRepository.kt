@@ -80,12 +80,24 @@ class VehicleRepository {
     fun setTirePressure(code: String, psi: Float) = updateWithAutoWake { state ->
         val t = state.tpms
         val clamped = psi.coerceIn(15.0f, 42.0f)
-        val temp = if (clamped < state.tpmsLowThresholdPsi) 41 else 34
         val updated = when (code) {
-            "FL" -> t.copy(frontLeft = t.frontLeft.copy(pressurePsi = clamped, tempC = temp))
-            "FR" -> t.copy(frontRight = t.frontRight.copy(pressurePsi = clamped, tempC = temp))
-            "RL" -> t.copy(rearLeft = t.rearLeft.copy(pressurePsi = clamped, tempC = temp))
-            "RR" -> t.copy(rearRight = t.rearRight.copy(pressurePsi = clamped, tempC = temp))
+            "FL" -> t.copy(frontLeft = t.frontLeft.copy(pressurePsi = clamped))
+            "FR" -> t.copy(frontRight = t.frontRight.copy(pressurePsi = clamped))
+            "RL" -> t.copy(rearLeft = t.rearLeft.copy(pressurePsi = clamped))
+            "RR" -> t.copy(rearRight = t.rearRight.copy(pressurePsi = clamped))
+            else -> t
+        }
+        state.copy(tpms = updated)
+    }
+
+    fun setTireTemp(code: String, tempC: Int) = updateWithAutoWake { state ->
+        val t = state.tpms
+        val clampedTemp = tempC.coerceIn(20, 70)
+        val updated = when (code) {
+            "FL" -> t.copy(frontLeft = t.frontLeft.copy(tempC = clampedTemp))
+            "FR" -> t.copy(frontRight = t.frontRight.copy(tempC = clampedTemp))
+            "RL" -> t.copy(rearLeft = t.rearLeft.copy(tempC = clampedTemp))
+            "RR" -> t.copy(rearRight = t.rearRight.copy(tempC = clampedTemp))
             else -> t
         }
         state.copy(tpms = updated)

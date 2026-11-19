@@ -39,6 +39,7 @@ fun SimulatorAndSettingsSheet(
     onToggleDoor: (String) -> Unit,
     onToggleLock: () -> Unit,
     onTirePressureChange: (String, Float) -> Unit,
+    onTireTempChange: (String, Int) -> Unit,
     onPaintColorSelect: (KiaRioPaintColor) -> Unit,
     onSpeedThresholdChange: (Int) -> Unit,
     onApplyNormalPreset: () -> Unit,
@@ -267,7 +268,19 @@ fun SimulatorAndSettingsSheet(
         Slider(
             value = telemetry.tpms.rearLeft.pressurePsi,
             onValueChange = { onTirePressureChange("RL", it) },
-            valueRange = 18f..36f,
+            valueRange = 18f..42f,
+            colors = monochromeSliderColors
+        )
+
+        Text(
+            text = "Rear-Left Tire Temp ${telemetry.tpms.rearLeft.tempC}°C",
+            color = ObsidianColors.MutedSilver,
+            fontSize = 11.sp
+        )
+        Slider(
+            value = telemetry.tpms.rearLeft.tempC.toFloat(),
+            onValueChange = { onTireTempChange("RL", it.toInt()) },
+            valueRange = 25f..60f,
             colors = monochromeSliderColors
         )
 
