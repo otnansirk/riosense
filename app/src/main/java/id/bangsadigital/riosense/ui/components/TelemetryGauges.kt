@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,13 +28,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import id.bangsadigital.riosense.model.VehicleTelemetry
@@ -165,48 +171,65 @@ fun LeftSpeedAndSecurityPanel(
             }
         }
 
-        // Borderless Door Lock Status Pill (Clean matte surface, zero outline)
+        // Borderless Door Lock Status Pill with inline closed/open padlock icon
         val isAlarm = telemetry.isSpeedUnlockAlarm
         val lockBg = if (isAlarm) ObsidianColors.AlertSurface else Color(0xFF0E1014)
+        val lockTint = when {
+            isAlarm -> ObsidianColors.CrimsonAlert
+            telemetry.centralLocked -> ObsidianColors.PureSilver
+            else -> ObsidianColors.MutedSilver
+        }
 
-        Row(
+        Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(9.dp))
                 .background(lockBg)
                 .clickable { onToggleLock() }
-                .padding(horizontal = 14.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(
-                        when {
-                            isAlarm -> ObsidianColors.CrimsonAlert
-                            telemetry.centralLocked -> ObsidianColors.PureSilver
-                            else -> Color(0xFF525866)
-                        }
-                    )
-            )
-            Column {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                PadlockVectorIcon(
+                    locked = telemetry.centralLocked,
+                    tint = lockTint,
+                    modifier = Modifier
+                        .size(12.dp)
+                        .offset(y = (-0.5).dp)
+                )
                 Text(
                     text = if (telemetry.centralLocked) "Doors Locked" else "Doors Unlocked",
                     color = if (isAlarm) ObsidianColors.CrimsonAlert else ObsidianColors.PureSilver,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.mediumWeight(isAlarm)
-                )
-                Text(
-                    text = if (isAlarm) {
-                        "Speed > ${telemetry.speedLockAlarmThresholdKmh} km/h warning"
-                    } else {
-                        "Auto-alert at ${telemetry.speedLockAlarmThresholdKmh} km/h"
-                    },
-                    color = ObsidianColors.DimSilver,
-                    fontSize = 9.sp
+                    style = TextStyle(
+                        fontSize = 11.sp,
+                        lineHeight = 13.sp,
+                        fontWeight = FontWeight.mediumWeight(isAlarm),
+                        platformStyle = PlatformTextStyle(includeFontPadding = false)
+                    ),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
+            Text(
+                text = if (isAlarm) {
+                    "Speed > ${telemetry.speedLockAlarmThresholdKmh} km/h warning"
+                } else {
+                    "Auto-alert at ${telemetry.speedLockAlarmThresholdKmh} km/h"
+                },
+                color = ObsidianColors.DimSilver,
+                style = TextStyle(
+                    fontSize = 9.sp,
+                    lineHeight = 11.sp,
+                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+                ),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -393,3 +416,62 @@ fun RightEngineTelemetryPanel(
 
 private fun FontWeight.Companion.mediumWeight(isAlert: Boolean): FontWeight =
     if (isAlert) FontWeight.Bold else FontWeight.Medium
+
+/**
+ * Vector padlock icon rendered on Canvas: closed shackle when [locked] is true,
+ * lifted/open shackle when [locked] is false.
+ */
+@Composable
+private fun PadlockVectorIcon(
+    locked: Boolean,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val strokeWidth = w * 0.13f
+
+        // Padlock body (vertically balanced inside canvas bounds)
+        val bodyTop = h * 0.44f
+        val bodyHeight = h * 0.44f
+        val bodyLeft = w * 0.16f
+        val bodyWidth = w * 0.68f
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(bodyLeft, bodyTop),
+            size = Size(bodyWidth, bodyHeight),
+            cornerRadius = CornerRadius(w * 0.14f, w * 0.14f),
+            style = Stroke(width = strokeWidth)
+        )
+
+        // Keyhole dot centered inside padlock body
+        drawCircle(
+            color = tint,
+            radius = w * 0.08f,
+            center = Offset(w * 0.50f, bodyTop + bodyHeight * 0.52f)
+        )
+
+        // Shackle arc (closed when locked, raised/open on the right side when unlocked)
+        val shackleLeft = w * 0.30f
+        val shackleRight = w * 0.70f
+        val shackleTop = h * 0.10f
+        val shacklePath = Path().apply {
+            moveTo(shackleLeft, bodyTop)
+            lineTo(shackleLeft, h * 0.30f)
+            cubicTo(
+                shackleLeft, shackleTop,
+                shackleRight, shackleTop,
+                shackleRight, if (locked) h * 0.30f else h * 0.22f
+            )
+            if (locked) {
+                lineTo(shackleRight, bodyTop)
+            }
+        }
+        drawPath(
+            path = shacklePath,
+            color = tint,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        )
+    }
+}
