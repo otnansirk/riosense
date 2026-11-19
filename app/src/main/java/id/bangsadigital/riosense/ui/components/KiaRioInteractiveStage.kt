@@ -2,6 +2,7 @@ package id.bangsadigital.riosense.ui.components
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.LruCache
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -31,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,11 +60,13 @@ import id.bangsadigital.riosense.model.KiaRioPaintColor
 import id.bangsadigital.riosense.model.TireInfo
 import id.bangsadigital.riosense.model.VehicleTelemetry
 import id.bangsadigital.riosense.ui.theme.ObsidianColors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
-private const val TURNTABLE_COUNT = 72
+private const val TURNTABLE_COUNT = 180
 private const val DOOR_SEQ_MAX_INDEX = 19
 
 @Composable
@@ -79,39 +83,87 @@ fun KiaRioInteractiveStage(
             inPreferredConfig = Bitmap.Config.RGB_565
         }
     }
-
-    // 1. Preload 72 Frame Putaran 360° (Setiap 5 Derajat - Sangat Halus & Hemat RAM dengan RGB_565)
-    val turntableBitmaps = remember {
-        (0 until TURNTABLE_COUNT).mapNotNull { idx ->
-            val name = String.format("car_sequences/turntable_360/turntable_%02d.jpg", idx)
-            runCatching {
-                context.assets.open(name).use {
-                    BitmapFactory.decodeStream(it, null, decodeOpts)?.asImageBitmap()
-                }
-            }.getOrNull()
+    // Transparent PNG turntable frames membutuhkan ARGB_8888 agar channel alpha tetap utuh
+    val turntableDecodeOpts = remember {
+        BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.ARGB_8888
         }
     }
 
-    // 2. Preload 7 Sekuens Animasi Buka-Tutup Pintu & Bagasi (Masing-Masing 20 Frame: 00 = Rapat .. 19 = Terbuka Penuh)
-    val doorSequences = remember {
-        val prefixes = listOf("fr", "rr", "fr_rr", "fl", "rl", "fl_rl", "trunk")
-        buildMap<String, List<ImageBitmap>> {
-            prefixes.forEach { prefix ->
-                val list = (0..DOOR_SEQ_MAX_INDEX).mapNotNull { step ->
-                    val name = String.format("car_sequences/doors/%s_%02d.jpg", prefix, step)
-                    runCatching {
-                        context.assets.open(name).use {
-                            BitmapFactory.decodeStream(it, null, decodeOpts)?.asImageBitmap()
-                        }
-                    }.getOrNull()
+    // 1. Smart Thread-Safe LRU Frame Cache untuk 180 Frame Transparent PNG (2° per Frame: turntable_000.png .. turntable_179.png)
+    //    Kapasitas 90 frame (~80 MB RAM saat aktif) + auto-evict saat minimize agar HU RAM 4GB tetap lega.
+    val turntableCache = remember {
+        object : LruCache<Int, ImageBitmap>(90) {}
+    }
+
+    fun getOrLoadTurntableFrame(index: Int): ImageBitmap? {
+        val normIdx = ((index % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
+        synchronized(turntableCache) {
+            turntableCache.get(normIdx)?.let { return it }
+        }
+        val name = String.format("car_sequences/turntable_360/turntable_%03d.png", normIdx)
+        val loaded = runCatching {
+            context.assets.open(name).use {
+                BitmapFactory.decodeStream(it, null, turntableDecodeOpts)?.asImageBitmap()
+            }
+        }.getOrNull()
+        if (loaded != null) {
+            synchronized(turntableCache) {
+                turntableCache.put(normIdx, loaded)
+            }
+        }
+        return loaded
+    }
+
+    // State putaran 360° (0f .. 180f, setiap 1.0f = 2° rotasi mulus!)
+    val turntableAnim = remember { Animatable(0f) }
+    val activeTurntableIdx = ((turntableAnim.value.roundToInt() % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
+
+    // Sliding-window async prefetcher (±35 frame) di background agar putaran & wrap 179->0 tetap 60 FPS tanpa jeda
+    LaunchedEffect(activeTurntableIdx) {
+        withContext(Dispatchers.IO) {
+            for (offset in 0..35) {
+                getOrLoadTurntableFrame(activeTurntableIdx + offset)
+                if (offset > 0) {
+                    getOrLoadTurntableFrame(activeTurntableIdx - offset)
                 }
-                put(prefix, list)
             }
         }
     }
 
-    // State putaran 360° (0f .. 72f, di mana 0f = 45° Serong Kanan Belakang)
-    val turntableAnim = remember { Animatable(0f) }
+    // 2. Lazy LRU Cache untuk 7 Sekuens Animasi Pintu & Bagasi (Max 45 frame di RAM ~28 MB, hemat 60 MB saat boot!)
+    val doorCache = remember {
+        object : LruCache<String, ImageBitmap>(45) {}
+    }
+
+    fun getOrLoadDoorFrame(prefix: String, step: Int): ImageBitmap? {
+        val clampedStep = step.coerceIn(0, DOOR_SEQ_MAX_INDEX)
+        val key = "${prefix}_$clampedStep"
+        synchronized(doorCache) {
+            doorCache.get(key)?.let { return it }
+        }
+        val name = String.format("car_sequences/doors/%s_%02d.jpg", prefix, clampedStep)
+        val loaded = runCatching {
+            context.assets.open(name).use {
+                BitmapFactory.decodeStream(it, null, decodeOpts)?.asImageBitmap()
+            }
+        }.getOrNull()
+        if (loaded != null) {
+            synchronized(doorCache) {
+                doorCache.put(key, loaded)
+            }
+        }
+        return loaded
+    }
+
+    // Kosongkan cache gambar mobil otomatis saat Stage dilepas (mode Minimize) agar Maps/Spotify tetap lega
+    DisposableEffect(Unit) {
+        onDispose {
+            synchronized(turntableCache) { turntableCache.evictAll() }
+            synchronized(doorCache) { doorCache.evictAll() }
+        }
+    }
+
     var isUserDraggingTurntable by remember { mutableStateOf(false) }
 
     val d = telemetry.doors
@@ -135,18 +187,30 @@ fun KiaRioInteractiveStage(
     else if (d.frontLeftOpen) activeLeftKey = "fl"
     else if (d.rearLeftOpen) activeLeftKey = "rl"
 
-    // Jalankan animasi Buka (0 -> 19) dan Tutup (19 -> 0) secara mulus
+    // Jalankan animasi Buka (0 -> 19) dan Tutup (19 -> 0) secara mulus dengan prefetch asinkron
     LaunchedEffect(d.frontRightOpen, d.rearRightOpen, d.frontLeftOpen, d.rearLeftOpen, d.trunkOpen) {
+        withContext(Dispatchers.IO) {
+            if (rightOpenNow || rightSwingAnim.value > 0.05f) {
+                for (s in 0..DOOR_SEQ_MAX_INDEX) getOrLoadDoorFrame(activeRightKey, s)
+            }
+            if (leftOpenNow || leftSwingAnim.value > 0.05f) {
+                for (s in 0..DOOR_SEQ_MAX_INDEX) getOrLoadDoorFrame(activeLeftKey, s)
+            }
+            if (trunkOpenNow || trunkSwingAnim.value > 0.05f) {
+                for (s in 0..DOOR_SEQ_MAX_INDEX) getOrLoadDoorFrame("trunk", s)
+            }
+        }
+
         if (rightOpenNow || leftOpenNow || trunkOpenNow) {
             isUserDraggingTurntable = false
-            // Jika mobil sedang di sudut lain, putar balik cepat ke titik awal (0f) sebelum pintu mengayun buka
+            // Jika mobil sedang di sudut lain, putar balik cepat ke titik awal (0°) sebelum pintu mengayun buka
             val currentMod = ((turntableAnim.value % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
-            if (currentMod > 0.5f && currentMod < TURNTABLE_COUNT - 0.5f) {
+            if (currentMod > 1.0f && currentMod < TURNTABLE_COUNT - 1.0f) {
                 val targetZero = if (currentMod <= TURNTABLE_COUNT / 2f) 0f else TURNTABLE_COUNT.toFloat()
                 turntableAnim.snapTo(currentMod)
                 turntableAnim.animateTo(
                     targetValue = targetZero,
-                    animationSpec = tween(250, easing = FastOutSlowInEasing)
+                    animationSpec = tween(260, easing = FastOutSlowInEasing)
                 )
                 turntableAnim.snapTo(0f)
             }
@@ -219,8 +283,8 @@ fun KiaRioInteractiveStage(
                 ) { change, dragAmount ->
                     change.consume()
                     scope.launch {
-                        // 72 frame (setiap 5 derajat): geser 7px = 1 frame baru -> super mulus 60 FPS!
-                        turntableAnim.snapTo(turntableAnim.value + dragAmount.x / 7f)
+                        // 180 frame (2 derajat per frame): geser ~514px = 360 derajat penuh!
+                        turntableAnim.snapTo(turntableAnim.value + dragAmount.x * 0.35f)
                     }
                 }
             }
@@ -251,7 +315,7 @@ fun KiaRioInteractiveStage(
                 ) {
                     if (showLeftDoorAnim) {
                         val leftIdx = leftSwingAnim.value.roundToInt().coerceIn(0, DOOR_SEQ_MAX_INDEX)
-                        val leftBmp = doorSequences[activeLeftKey]?.getOrNull(leftIdx)
+                        val leftBmp = getOrLoadDoorFrame(activeLeftKey, leftIdx)
                         Column(
                             modifier = Modifier
                                 .weight(1f)
@@ -292,7 +356,7 @@ fun KiaRioInteractiveStage(
                             )
                         }
                         val rightIdx = rightSwingAnim.value.roundToInt().coerceIn(0, DOOR_SEQ_MAX_INDEX)
-                        val rightBmp = doorSequences[activeRightKey]?.getOrNull(rightIdx)
+                        val rightBmp = getOrLoadDoorFrame(activeRightKey, rightIdx)
                         Column(
                             modifier = Modifier
                                 .weight(1f)
@@ -331,7 +395,7 @@ fun KiaRioInteractiveStage(
                                 .background(Color(0xFF1E222B))
                         )
                         val trunkIdx = trunkSwingAnim.value.roundToInt().coerceIn(0, DOOR_SEQ_MAX_INDEX)
-                        val trunkBmp = doorSequences["trunk"]?.getOrNull(trunkIdx)
+                        val trunkBmp = getOrLoadDoorFrame("trunk", trunkIdx)
                         Column(
                             modifier = Modifier
                                 .weight(1f)
@@ -362,7 +426,7 @@ fun KiaRioInteractiveStage(
             // KASUS 2: Sisi Kanan saja sedang mengayun buka / tutup (FR, RR, atau FR+RR)
             showRightDoorAnim -> {
                 val rightIdx = rightSwingAnim.value.roundToInt().coerceIn(0, DOOR_SEQ_MAX_INDEX)
-                val rightBmp = doorSequences[activeRightKey]?.getOrNull(rightIdx)
+                val rightBmp = getOrLoadDoorFrame(activeRightKey, rightIdx)
                 if (rightBmp != null) {
                     Image(
                         bitmap = rightBmp,
@@ -379,7 +443,7 @@ fun KiaRioInteractiveStage(
             // KASUS 3: Sisi Kiri saja sedang mengayun buka / tutup (FL, RL, atau FL+RL)
             showLeftDoorAnim -> {
                 val leftIdx = leftSwingAnim.value.roundToInt().coerceIn(0, DOOR_SEQ_MAX_INDEX)
-                val leftBmp = doorSequences[activeLeftKey]?.getOrNull(leftIdx)
+                val leftBmp = getOrLoadDoorFrame(activeLeftKey, leftIdx)
                 if (leftBmp != null) {
                     Image(
                         bitmap = leftBmp,
@@ -396,7 +460,7 @@ fun KiaRioInteractiveStage(
             // KASUS 4: Bagasi Belakang (Tailgate) saja sedang mengayun buka / tutup
             showTrunkAnim -> {
                 val trunkIdx = trunkSwingAnim.value.roundToInt().coerceIn(0, DOOR_SEQ_MAX_INDEX)
-                val trunkBmp = doorSequences["trunk"]?.getOrNull(trunkIdx)
+                val trunkBmp = getOrLoadDoorFrame("trunk", trunkIdx)
                 if (trunkBmp != null) {
                     Image(
                         bitmap = trunkBmp,
@@ -410,10 +474,10 @@ fun KiaRioInteractiveStage(
                 }
             }
 
-            // KASUS 5: Mode Putaran 360° High-Density (72 Frame = Setiap 5 Derajat)
+            // KASUS 5: Mode Putaran 360° Transparent PNG 2°/Frame (180 Frame: 000 s/d 179)
             else -> {
                 val frameIdx = ((turntableAnim.value.roundToInt() % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
-                val bmp = turntableBitmaps.getOrNull(frameIdx)
+                val bmp = getOrLoadTurntableFrame(frameIdx)
                 if (bmp != null) {
                     Image(
                         bitmap = bmp,
@@ -475,12 +539,12 @@ fun KiaRioInteractiveStage(
                     alignRight = false
                 )
 
-                val angleDeg = ((((turntableAnim.value.roundToInt() % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT) * 5 + 45) % 360
+                val currentDeg = (((turntableAnim.value.roundToInt() % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT) * 2
                 Text(
                     text = when {
                         activePanelsCount >= 2 -> "Multi-Door Animation · Drag to Orbit 360°"
                         activePanelsCount == 1 -> "Door Swing Animation · Drag to Orbit 360°"
-                        else -> "360° Studio Orbit ($angleDeg°) · Double-tap Reset"
+                        else -> "360° Studio Orbit (${currentDeg}°/360°) · Double-tap Reset"
                     },
                     color = Color(0xFF3E4452),
                     fontSize = 9.sp,
