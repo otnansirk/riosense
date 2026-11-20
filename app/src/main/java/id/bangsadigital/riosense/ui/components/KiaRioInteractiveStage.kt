@@ -77,6 +77,8 @@ import kotlin.math.roundToInt
 
 private const val TURNTABLE_COUNT = 180
 private const val DOOR_SEQ_MAX_INDEX = 19
+private const val REAR_RIGHT_DOOR_FRAME = 0f
+private const val REAR_LEFT_DOOR_FRAME = 146f
 
 private enum class CarViewMode(val label: String, val targetFrame: Float?) {
     AUTO_ROTATE("360° Auto", null),
@@ -127,8 +129,8 @@ fun KiaRioInteractiveStage(
         return loaded
     }
 
-    // 360° orbit state (0f .. 180f, each 1.0f = 2° smooth step)
-    val turntableAnim = remember { Animatable(0f) }
+    // 360° orbit state (0f .. 180f, each 1.0f = 2° smooth step), defaulting to 45° Front View (frame 72)
+    val turntableAnim = remember { Animatable(CarViewMode.FRONT_45.targetFrame ?: 72f) }
     val activeTurntableIdx = ((turntableAnim.value.roundToInt() % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
 
     // Sliding-window background prefetcher (±35 frames) for zero-stutter 60 FPS rotation & 179->0 wraparound
@@ -177,7 +179,7 @@ fun KiaRioInteractiveStage(
     }
 
     var isUserDraggingTurntable by remember { mutableStateOf(false) }
-    var selectedViewMode by remember { mutableStateOf<CarViewMode?>(CarViewMode.BACK_45) }
+    var selectedViewMode by remember { mutableStateOf<CarViewMode?>(CarViewMode.FRONT_45) }
 
     suspend fun animateTurntableTo(targetFrame: Float) {
         val currentMod = ((turntableAnim.value % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
@@ -197,11 +199,13 @@ fun KiaRioInteractiveStage(
     val leftOpenNow = d.frontLeftOpen || d.rearLeftOpen
     val trunkOpenNow = d.trunkOpen
 
-    // Auto Rotate 360° Mode: advance smoothly on display VSync (~16 frames/sec)
-    LaunchedEffect(selectedViewMode) {
-        if (selectedViewMode == CarViewMode.AUTO_ROTATE) {
+    // Auto Rotate 360° Mode: advance smoothly on display VSync (~16 frames/sec),
+    // pausing automatically while any door or tailgate is open without altering selectedViewMode
+    val anyDoorOpen = rightOpenNow || leftOpenNow || trunkOpenNow
+    LaunchedEffect(selectedViewMode, anyDoorOpen) {
+        if (selectedViewMode == CarViewMode.AUTO_ROTATE && !anyDoorOpen) {
             var lastNanos = withFrameNanos { it }
-            while (selectedViewMode == CarViewMode.AUTO_ROTATE) {
+            while (selectedViewMode == CarViewMode.AUTO_ROTATE && !anyDoorOpen) {
                 val now = withFrameNanos { it }
                 val dtSec = ((now - lastNanos) / 1_000_000_000f).coerceAtMost(0.05f)
                 lastNanos = now
@@ -242,17 +246,25 @@ fun KiaRioInteractiveStage(
 
         if (rightOpenNow || leftOpenNow || trunkOpenNow) {
             isUserDraggingTurntable = false
-            selectedViewMode = CarViewMode.BACK_45
-            // Smoothly return car to hero angle (0°) before playing door swing animation
+            // Match the turntable angle to the door sequence orientation before swinging open,
+            // keeping the bottom view-selector indicator strictly manual (unchanged):
+            // FL/RL sequences face rear-left (headlamp on left -> frame 146), while FR/RR/Trunk face rear-right (frame 0).
+            val targetDoorFrame = if (leftOpenNow && !rightOpenNow && !trunkOpenNow) {
+                REAR_LEFT_DOOR_FRAME
+            } else {
+                REAR_RIGHT_DOOR_FRAME
+            }
             val currentMod = ((turntableAnim.value % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
-            if (currentMod > 1.0f && currentMod < TURNTABLE_COUNT - 1.0f) {
-                val targetZero = if (currentMod <= TURNTABLE_COUNT / 2f) 0f else TURNTABLE_COUNT.toFloat()
+            var delta = targetDoorFrame - currentMod
+            if (delta > TURNTABLE_COUNT / 2f) delta -= TURNTABLE_COUNT
+            if (delta < -TURNTABLE_COUNT / 2f) delta += TURNTABLE_COUNT
+            if (kotlin.math.abs(delta) > 1.0f) {
                 turntableAnim.snapTo(currentMod)
                 turntableAnim.animateTo(
-                    targetValue = targetZero,
-                    animationSpec = tween(260, easing = FastOutSlowInEasing)
+                    targetValue = currentMod + delta,
+                    animationSpec = tween(320, easing = FastOutSlowInEasing)
                 )
-                turntableAnim.snapTo(0f)
+                turntableAnim.snapTo(targetDoorFrame)
             }
         }
 
@@ -274,6 +286,15 @@ fun KiaRioInteractiveStage(
                     targetValue = if (trunkOpenNow) DOOR_SEQ_MAX_INDEX.toFloat() else 0f,
                     animationSpec = tween(durationMillis = 560, easing = LinearEasing)
                 )
+            }
+        }
+
+        if (!rightOpenNow && !leftOpenNow && !trunkOpenNow && !isUserDraggingTurntable) {
+            // Once all doors are closed, smoothly return to the manually selected view (or default 45° Front)
+            // without changing the bottom view-selector indicator
+            if (selectedViewMode != CarViewMode.AUTO_ROTATE) {
+                val returnFrame = selectedViewMode?.targetFrame ?: (CarViewMode.FRONT_45.targetFrame ?: 72f)
+                animateTurntableTo(returnFrame)
             }
         }
     }
@@ -351,13 +372,14 @@ fun KiaRioInteractiveStage(
                         }
                     }
                 }
-                .pointerInput(Unit) {
+                .pointerInput(rightOpenNow, leftOpenNow, trunkOpenNow) {
                     detectTapGestures(
                         onDoubleTap = {
-                            isUserDraggingTurntable = false
-                            selectedViewMode = CarViewMode.BACK_45
+                            val defaultFrame = CarViewMode.FRONT_45.targetFrame ?: 72f
+                            isUserDraggingTurntable = rightOpenNow || leftOpenNow || trunkOpenNow
+                            selectedViewMode = CarViewMode.FRONT_45
                             scope.launch {
-                                animateTurntableTo(0f)
+                                animateTurntableTo(defaultFrame)
                             }
                         }
                     )
