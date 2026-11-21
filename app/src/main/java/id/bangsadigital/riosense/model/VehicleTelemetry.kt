@@ -109,15 +109,28 @@ data class VehicleTelemetry(
     val lights: LightState = LightState(),
     val tpms: TpmsState = TpmsState(),
     val paintColor: KiaRioPaintColor = KiaRioPaintColor.SNOW_WHITE_PEARL,
-    val speedLockAlarmThresholdKmh: Int = 20,
-    val tpmsLowThresholdPsi: Float = 26.0f,
-    val tpmsHighThresholdPsi: Float = 38.0f,
-    val tpmsHighTempC: Int = 40,
+    val speedLockAlarmThresholdKmh: Int = DEFAULT_SPEED_LOCK_THRESHOLD_KMH,
+    val tpmsLowThresholdPsi: Float = DEFAULT_TPMS_LOW_PSI,
+    val tpmsHighThresholdPsi: Float = DEFAULT_TPMS_HIGH_PSI,
+    val tpmsHighTempC: Int = DEFAULT_TPMS_HIGH_TEMP_C,
+    val coolantOverheatThresholdC: Int = DEFAULT_COOLANT_OVERHEAT_C,
+    val batteryLowThresholdV: Float = DEFAULT_BATTERY_LOW_V,
+    val batteryHighThresholdV: Float = DEFAULT_BATTERY_HIGH_V,
     val obdConnected: Boolean = false,
     val simulatorMode: Boolean = true,
     val isMinimized: Boolean = false,
     val audioAlarmMuted: Boolean = false
 ) {
+    companion object {
+        const val DEFAULT_SPEED_LOCK_THRESHOLD_KMH = 20
+        const val DEFAULT_TPMS_LOW_PSI = 26.0f
+        const val DEFAULT_TPMS_HIGH_PSI = 38.0f
+        const val DEFAULT_TPMS_HIGH_TEMP_C = 40
+        const val DEFAULT_COOLANT_OVERHEAT_C = 102
+        const val DEFAULT_BATTERY_LOW_V = 11.8f
+        const val DEFAULT_BATTERY_HIGH_V = 15.0f
+    }
+
     val isSpeedUnlockAlarm: Boolean
         get() = speedKmh >= speedLockAlarmThresholdKmh && !centralLocked
 
@@ -125,13 +138,31 @@ data class VehicleTelemetry(
         get() = speedKmh > 3 && doors.anyDoorOpen
 
     val isCoolantOverheat: Boolean
-        get() = coolantTempC >= 102
+        get() = coolantTempC >= coolantOverheatThresholdC
+
+    val isBatteryLow: Boolean
+        get() = batteryVoltage <= batteryLowThresholdV
+
+    val isBatteryHigh: Boolean
+        get() = batteryVoltage >= batteryHighThresholdV
+
+    val isBatteryAlert: Boolean
+        get() = isBatteryLow || isBatteryHigh
+
+    val isCustomAlertSettings: Boolean
+        get() = speedLockAlarmThresholdKmh != DEFAULT_SPEED_LOCK_THRESHOLD_KMH ||
+            kotlin.math.abs(tpmsLowThresholdPsi - DEFAULT_TPMS_LOW_PSI) > 0.05f ||
+            kotlin.math.abs(tpmsHighThresholdPsi - DEFAULT_TPMS_HIGH_PSI) > 0.05f ||
+            tpmsHighTempC != DEFAULT_TPMS_HIGH_TEMP_C ||
+            coolantOverheatThresholdC != DEFAULT_COOLANT_OVERHEAT_C ||
+            kotlin.math.abs(batteryLowThresholdV - DEFAULT_BATTERY_LOW_V) > 0.05f ||
+            kotlin.math.abs(batteryHighThresholdV - DEFAULT_BATTERY_HIGH_V) > 0.05f
 
     val alertTires: List<TireInfo>
         get() = tpms.alertTires(tpmsLowThresholdPsi, tpmsHighThresholdPsi, tpmsHighTempC)
 
     val hasAnyCriticalAlert: Boolean
-        get() = doors.anyDoorOpen || isSpeedUnlockAlarm || isCoolantOverheat || alertTires.isNotEmpty()
+        get() = doors.anyDoorOpen || isSpeedUnlockAlarm || isCoolantOverheat || isBatteryAlert || alertTires.isNotEmpty()
 
     val activeAlerts: List<String>
         get() = buildList {
@@ -155,7 +186,12 @@ data class VehicleTelemetry(
                 add("TPMS ALERT: ${tire.label} (${tire.code}) ${parts.joinToString(" & ")}")
             }
             if (isCoolantOverheat) {
-                add("ENGINE OVERHEAT: High Coolant Temp ($coolantTempC°C)")
+                add("ENGINE OVERHEAT: High Coolant Temp ($coolantTempC°C >= $coolantOverheatThresholdC°C)")
+            }
+            if (isBatteryLow) {
+                add("BATTERY ALERT: Low Voltage (${String.format("%.1f", batteryVoltage)}V <= ${String.format("%.1f", batteryLowThresholdV)}V)")
+            } else if (isBatteryHigh) {
+                add("BATTERY ALERT: Overcharge (${String.format("%.1f", batteryVoltage)}V >= ${String.format("%.1f", batteryHighThresholdV)}V)")
             }
         }
 }

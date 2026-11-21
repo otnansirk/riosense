@@ -42,7 +42,7 @@ fun SimulatorAndSettingsSheet(
     onTirePressureChange: (String, Float) -> Unit,
     onTireTempChange: (String, Int) -> Unit,
     onPaintColorSelect: (KiaRioPaintColor) -> Unit,
-    onSpeedThresholdChange: (Int) -> Unit,
+    onBatteryVoltageChange: (Float) -> Unit,
     onApplyNormalPreset: () -> Unit,
     onApplyAlertPreset: () -> Unit,
     onInjectDtc: (String) -> Unit,
@@ -346,14 +346,14 @@ fun SimulatorAndSettingsSheet(
         )
 
         Text(
-            text = "Speed Lock Warning Threshold ${telemetry.speedLockAlarmThresholdKmh} km/h",
-            color = ObsidianColors.MutedSilver,
+            text = "Battery Voltage ${String.format("%.1f", telemetry.batteryVoltage)} V",
+            color = if (telemetry.isBatteryAlert) ObsidianColors.CrimsonAlert else ObsidianColors.MutedSilver,
             fontSize = 11.sp
         )
         Slider(
-            value = telemetry.speedLockAlarmThresholdKmh.toFloat(),
-            onValueChange = { onSpeedThresholdChange(it.toInt()) },
-            valueRange = 10f..40f,
+            value = telemetry.batteryVoltage,
+            onValueChange = { onBatteryVoltageChange(it) },
+            valueRange = 10.5f..15.8f,
             colors = monochromeSliderColors
         )
 

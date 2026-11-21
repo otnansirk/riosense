@@ -159,7 +159,7 @@ fun RioSenseDashboardScreen(
                     onTirePressureChange = { code, psi -> repository.setTirePressure(code, psi) },
                     onTireTempChange = { code, temp -> repository.setTireTemp(code, temp) },
                     onPaintColorSelect = { color -> repository.setPaintColor(color) },
-                    onSpeedThresholdChange = { kmh -> repository.setSpeedLockThreshold(kmh) },
+                    onBatteryVoltageChange = { volts -> repository.setBatteryVoltage(volts) },
                     onApplyNormalPreset = { repository.applyNormalPreset() },
                     onApplyAlertPreset = { repository.applyAlertShowcasePreset() },
                     onInjectDtc = { code -> repository.injectSimulatedDtc(code) },
@@ -169,7 +169,7 @@ fun RioSenseDashboardScreen(
             }
         }
 
-        // 5. CONTROLS MENU SHEET (Clean OBD-II Diagnostics: Error Log & Activity Log)
+        // 5. CONTROLS MENU SHEET (OBD-II Diagnostics: Error Log, Activity Log & Alarm Settings)
         if (showControlsDrawer) {
             Box(
                 modifier = Modifier
@@ -179,12 +179,21 @@ fun RioSenseDashboardScreen(
                 contentAlignment = Alignment.CenterEnd
             ) {
                 ControlsMenuSheet(
+                    telemetry = telemetry,
                     errorLogs = errorLogs,
                     activityLogs = activityLogs,
                     isActivityPaused = isActivityPaused,
                     onToggleActivityPause = { repository.toggleActivityLogPaused() },
                     onClearErrorLogs = { repository.clearErrorLogs() },
                     onClearActivityLogs = { repository.clearActivityLogs() },
+                    onSpeedLockThresholdChange = { kmh -> repository.setSpeedLockThreshold(kmh) },
+                    onTpmsLowPsiChange = { psi -> repository.setTpmsLowThreshold(psi) },
+                    onTpmsHighPsiChange = { psi -> repository.setTpmsHighThreshold(psi) },
+                    onTpmsHighTempChange = { tempC -> repository.setTpmsHighTempThreshold(tempC) },
+                    onCoolantOverheatChange = { tempC -> repository.setCoolantOverheatThreshold(tempC) },
+                    onBatteryLowChange = { volts -> repository.setBatteryLowThreshold(volts) },
+                    onBatteryHighChange = { volts -> repository.setBatteryHighThreshold(volts) },
+                    onResetSettingsToStandard = { repository.resetAlertSettingsToStandard() },
                     onClose = { showControlsDrawer = false },
                     modifier = Modifier.clickable(enabled = false) {}
                 )

@@ -385,7 +385,7 @@ fun RightEngineTelemetryPanel(
                 )
                 Text(
                     text = "${String.format("%.1f", telemetry.batteryVoltage)}V",
-                    color = ObsidianColors.PureSilver,
+                    color = if (telemetry.isBatteryAlert) ObsidianColors.CrimsonAlert else ObsidianColors.PureSilver,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
                 )

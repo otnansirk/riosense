@@ -526,7 +526,7 @@ class VehicleRepository {
                     pid = "PID 0105",
                     rawFrame = formatCoolantFrame(clamped),
                     severity = ObdErrorSeverity.CRITICAL,
-                    description = "Engine coolant temperature reached $clamped °C (above 102 °C warning threshold).",
+                    description = "Engine coolant temperature reached $clamped °C (threshold ${next.coolantOverheatThresholdC} °C).",
                     recommendedAction = "Pull over safely, idle engine to cool down, and check radiator fan & coolant reservoir.",
                     source = src
                 )
@@ -770,8 +770,110 @@ class VehicleRepository {
         it.copy(speedLockAlarmThresholdKmh = kmh.coerceIn(10, 60))
     }
 
-    fun setTpmsThreshold(psi: Float) = updateWithAutoWake {
-        it.copy(tpmsLowThresholdPsi = psi.coerceIn(20f, 32f))
+    fun setTpmsLowThreshold(psi: Float) = updateWithAutoWake {
+        val clamped = ((psi.coerceIn(18f, 32f) * 2f).toInt() / 2f)
+        it.copy(tpmsLowThresholdPsi = clamped)
+    }
+
+    fun setTpmsHighThreshold(psi: Float) = updateWithAutoWake {
+        val clamped = ((psi.coerceIn(34f, 45f) * 2f).toInt() / 2f)
+        it.copy(tpmsHighThresholdPsi = clamped)
+    }
+
+    fun setTpmsHighTempThreshold(tempC: Int) = updateWithAutoWake {
+        it.copy(tpmsHighTempC = tempC.coerceIn(35, 65))
+    }
+
+    fun setCoolantOverheatThreshold(tempC: Int) = updateWithAutoWake {
+        it.copy(coolantOverheatThresholdC = tempC.coerceIn(92, 118))
+    }
+
+    fun setBatteryLowThreshold(volts: Float) = updateWithAutoWake {
+        val clamped = ((volts.coerceIn(10.5f, 12.6f) * 10f).toInt() / 10f)
+        it.copy(batteryLowThresholdV = clamped)
+    }
+
+    fun setBatteryHighThreshold(volts: Float) = updateWithAutoWake {
+        val clamped = ((volts.coerceIn(14.4f, 16.0f) * 10f).toInt() / 10f)
+        it.copy(batteryHighThresholdV = clamped)
+    }
+
+    /**
+     * Updates simulated or live OBD-II Pin 16 battery voltage and logs alert transitions.
+     */
+    fun setBatteryVoltage(volts: Float) {
+        val prev = _telemetry.value
+        val clamped = ((volts.coerceIn(10.0f, 16.0f) * 10f).toInt() / 10f)
+        updateWithAutoWake {
+            it.copy(batteryVoltage = clamped)
+        }
+        val next = _telemetry.value
+        val now = System.currentTimeMillis()
+        val src = currentSourceLabel(next)
+        val voltStr = String.format("%.1f V", clamped)
+        recordActivity(
+            ObdActivityEntry(
+                id = idSeq.getAndIncrement(),
+                timestampMs = now,
+                direction = ObdDirection.RX,
+                pid = "ATRV",
+                parameterName = "Battery Voltage",
+                quickValue = voltStr,
+                ecuHeader = "ELM327",
+                rawFrame = String.format("%.1fV>", clamped),
+                decodedDetail = "Battery voltage updated to $voltStr (safe window ${String.format("%.1f", next.batteryLowThresholdV)}–${String.format("%.1f", next.batteryHighThresholdV)} V).",
+                formula = "Adapter ADC voltage reading",
+                source = src
+            )
+        )
+        if (!prev.isBatteryLow && next.isBatteryLow) {
+            recordError(
+                ObdErrorEntry(
+                    id = idSeq.getAndIncrement(),
+                    timestampMs = now,
+                    code = "P0562",
+                    title = "System Voltage Low",
+                    subsystem = "ECM / Charging System",
+                    pid = "ATRV",
+                    rawFrame = String.format("%.1fV>", clamped),
+                    severity = ObdErrorSeverity.CRITICAL,
+                    description = "Battery voltage dropped to $voltStr (at or below ${String.format("%.1f", next.batteryLowThresholdV)} V threshold).",
+                    recommendedAction = "Inspect battery health, alternator charging output, and battery terminal clamps.",
+                    source = src
+                )
+            )
+        } else if (!prev.isBatteryHigh && next.isBatteryHigh) {
+            recordError(
+                ObdErrorEntry(
+                    id = idSeq.getAndIncrement(),
+                    timestampMs = now,
+                    code = "P0563",
+                    title = "System Voltage High",
+                    subsystem = "ECM / Charging System",
+                    pid = "ATRV",
+                    rawFrame = String.format("%.1fV>", clamped),
+                    severity = ObdErrorSeverity.CRITICAL,
+                    description = "Battery voltage spiked to $voltStr (at or above ${String.format("%.1f", next.batteryHighThresholdV)} V threshold).",
+                    recommendedAction = "Have alternator voltage regulator checked to prevent ECU/lamp overvoltage damage.",
+                    source = src
+                )
+            )
+        }
+    }
+
+    /**
+     * Restores all alarm thresholds to Kia Rio UB recommended standard defaults.
+     */
+    fun resetAlertSettingsToStandard() = updateWithAutoWake {
+        it.copy(
+            speedLockAlarmThresholdKmh = VehicleTelemetry.DEFAULT_SPEED_LOCK_THRESHOLD_KMH,
+            tpmsLowThresholdPsi = VehicleTelemetry.DEFAULT_TPMS_LOW_PSI,
+            tpmsHighThresholdPsi = VehicleTelemetry.DEFAULT_TPMS_HIGH_PSI,
+            tpmsHighTempC = VehicleTelemetry.DEFAULT_TPMS_HIGH_TEMP_C,
+            coolantOverheatThresholdC = VehicleTelemetry.DEFAULT_COOLANT_OVERHEAT_C,
+            batteryLowThresholdV = VehicleTelemetry.DEFAULT_BATTERY_LOW_V,
+            batteryHighThresholdV = VehicleTelemetry.DEFAULT_BATTERY_HIGH_V
+        )
     }
 
     /** Preset 1: All Systems Nominal & Locked */
@@ -781,6 +883,7 @@ class VehicleRepository {
                 speedKmh = 62,
                 rpm = 1950,
                 coolantTempC = 88,
+                batteryVoltage = 14.1f,
                 gear = ObdCommandEngine.estimateManualGear(62, 1950),
                 centralLocked = true,
                 doors = DoorState(),

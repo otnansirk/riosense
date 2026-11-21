@@ -19,6 +19,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,6 +40,7 @@ import id.bangsadigital.riosense.model.ObdActivityEntry
 import id.bangsadigital.riosense.model.ObdDirection
 import id.bangsadigital.riosense.model.ObdErrorEntry
 import id.bangsadigital.riosense.model.ObdErrorSeverity
+import id.bangsadigital.riosense.model.VehicleTelemetry
 import id.bangsadigital.riosense.ui.theme.ObsidianColors
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -45,17 +48,27 @@ import java.util.Locale
 
 private enum class ControlsTab(val label: String) {
     ERROR_LOG("Error Log"),
-    ACTIVITY_LOG("Activity Log")
+    ACTIVITY_LOG("Activity Log"),
+    SETTINGS("Settings")
 }
 
 @Composable
 fun ControlsMenuSheet(
+    telemetry: VehicleTelemetry,
     errorLogs: List<ObdErrorEntry>,
     activityLogs: List<ObdActivityEntry>,
     isActivityPaused: Boolean,
     onToggleActivityPause: () -> Unit,
     onClearErrorLogs: () -> Unit,
     onClearActivityLogs: () -> Unit,
+    onSpeedLockThresholdChange: (Int) -> Unit,
+    onTpmsLowPsiChange: (Float) -> Unit,
+    onTpmsHighPsiChange: (Float) -> Unit,
+    onTpmsHighTempChange: (Int) -> Unit,
+    onCoolantOverheatChange: (Int) -> Unit,
+    onBatteryLowChange: (Float) -> Unit,
+    onBatteryHighChange: (Float) -> Unit,
+    onResetSettingsToStandard: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -86,7 +99,7 @@ fun ControlsMenuSheet(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "OBD-II Diagnostics & Live Telemetry Logs",
+                    text = "OBD-II Diagnostics, Logs & Alarm Settings",
                     color = ObsidianColors.DimSilver,
                     fontSize = 11.sp
                 )
@@ -107,7 +120,7 @@ fun ControlsMenuSheet(
             }
         }
 
-        // 2-Menu Selector: Error Log | Activity Log
+        // 3-Menu Selector: Error Log | Activity Log | Settings
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -135,6 +148,18 @@ fun ControlsMenuSheet(
                 selected = activeTab == ControlsTab.ACTIVITY_LOG,
                 onClick = {
                     activeTab = ControlsTab.ACTIVITY_LOG
+                    selectedError = null
+                    selectedActivity = null
+                },
+                modifier = Modifier.weight(1f)
+            )
+            ControlsMenuTabButton(
+                label = ControlsTab.SETTINGS.label,
+                badgeText = if (telemetry.isCustomAlertSettings) "Custom" else null,
+                badgeColor = Color(0xFF63B3ED),
+                selected = activeTab == ControlsTab.SETTINGS,
+                onClick = {
+                    activeTab = ControlsTab.SETTINGS
                     selectedError = null
                     selectedActivity = null
                 },
@@ -180,6 +205,21 @@ fun ControlsMenuSheet(
                         modifier = Modifier.weight(1f)
                     )
                 }
+            }
+
+            ControlsTab.SETTINGS -> {
+                AlarmSettingsView(
+                    telemetry = telemetry,
+                    onSpeedLockThresholdChange = onSpeedLockThresholdChange,
+                    onTpmsLowPsiChange = onTpmsLowPsiChange,
+                    onTpmsHighPsiChange = onTpmsHighPsiChange,
+                    onTpmsHighTempChange = onTpmsHighTempChange,
+                    onCoolantOverheatChange = onCoolantOverheatChange,
+                    onBatteryLowChange = onBatteryLowChange,
+                    onBatteryHighChange = onBatteryHighChange,
+                    onResetToStandard = onResetSettingsToStandard,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }
@@ -769,4 +809,218 @@ private fun formatDateTimeCompact(timestampMs: Long): String {
 private fun formatDateTimeFull(timestampMs: Long): String {
     val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
     return sdf.format(Date(timestampMs))
+}
+
+@Composable
+private fun AlarmSettingsView(
+    telemetry: VehicleTelemetry,
+    onSpeedLockThresholdChange: (Int) -> Unit,
+    onTpmsLowPsiChange: (Float) -> Unit,
+    onTpmsHighPsiChange: (Float) -> Unit,
+    onTpmsHighTempChange: (Int) -> Unit,
+    onCoolantOverheatChange: (Int) -> Unit,
+    onBatteryLowChange: (Float) -> Unit,
+    onBatteryHighChange: (Float) -> Unit,
+    onResetToStandard: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val sliderColors = SliderDefaults.colors(
+        thumbColor = ObsidianColors.PureSilver,
+        activeTrackColor = ObsidianColors.PureSilver,
+        inactiveTrackColor = Color(0xFF1E222B)
+    )
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Status & Reset Standard Button
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (telemetry.isCustomAlertSettings) {
+                    "Custom alarm thresholds active"
+                } else {
+                    "Standard Kia Rio UB defaults active"
+                },
+                color = if (telemetry.isCustomAlertSettings) Color(0xFF63B3ED) else ObsidianColors.DimSilver,
+                fontSize = 10.sp
+            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (telemetry.isCustomAlertSettings) Color(0xFF1D2430) else Color(0xFF161920))
+                    .clickable { onResetToStandard() }
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+            ) {
+                Text(
+                    text = "Reset Standard",
+                    color = if (telemetry.isCustomAlertSettings) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        // 1. Door Lock Speed Alarm
+        SettingsGroupCard(title = "DOOR LOCK SPEED ALARM") {
+            ThresholdSliderItem(
+                label = "Alert if doors unlocked above",
+                valueText = "${telemetry.speedLockAlarmThresholdKmh} km/h",
+                standardText = "Std: ${VehicleTelemetry.DEFAULT_SPEED_LOCK_THRESHOLD_KMH} km/h",
+                value = telemetry.speedLockAlarmThresholdKmh.toFloat(),
+                valueRange = 10f..60f,
+                onValueChange = { onSpeedLockThresholdChange(it.toInt()) },
+                sliderColors = sliderColors
+            )
+        }
+
+        // 2. Tire TPMS Alarm (PSI & Temperature)
+        SettingsGroupCard(title = "TIRE TPMS ALARM") {
+            ThresholdSliderItem(
+                label = "Minimum tire pressure (Low PSI)",
+                valueText = "${String.format("%.1f", telemetry.tpmsLowThresholdPsi)} PSI",
+                standardText = "Std: ${String.format("%.1f", VehicleTelemetry.DEFAULT_TPMS_LOW_PSI)} PSI",
+                value = telemetry.tpmsLowThresholdPsi,
+                valueRange = 18f..32f,
+                onValueChange = onTpmsLowPsiChange,
+                sliderColors = sliderColors
+            )
+            ThresholdSliderItem(
+                label = "Maximum tire pressure (High PSI)",
+                valueText = "${String.format("%.1f", telemetry.tpmsHighThresholdPsi)} PSI",
+                standardText = "Std: ${String.format("%.1f", VehicleTelemetry.DEFAULT_TPMS_HIGH_PSI)} PSI",
+                value = telemetry.tpmsHighThresholdPsi,
+                valueRange = 34f..45f,
+                onValueChange = onTpmsHighPsiChange,
+                sliderColors = sliderColors
+            )
+            ThresholdSliderItem(
+                label = "Minimum tire temperature alarm",
+                valueText = "${telemetry.tpmsHighTempC} °C",
+                standardText = "Std: ${VehicleTelemetry.DEFAULT_TPMS_HIGH_TEMP_C} °C",
+                value = telemetry.tpmsHighTempC.toFloat(),
+                valueRange = 35f..65f,
+                onValueChange = { onTpmsHighTempChange(it.toInt()) },
+                sliderColors = sliderColors
+            )
+        }
+
+        // 3. Engine Coolant Overheat Alarm
+        SettingsGroupCard(title = "ENGINE COOLANT ALARM") {
+            ThresholdSliderItem(
+                label = "Minimum coolant temp for overheat alarm",
+                valueText = "${telemetry.coolantOverheatThresholdC} °C",
+                standardText = "Std: ${VehicleTelemetry.DEFAULT_COOLANT_OVERHEAT_C} °C",
+                value = telemetry.coolantOverheatThresholdC.toFloat(),
+                valueRange = 92f..118f,
+                onValueChange = { onCoolantOverheatChange(it.toInt()) },
+                sliderColors = sliderColors
+            )
+        }
+
+        // 4. Battery Voltage Alarm
+        SettingsGroupCard(title = "BATTERY VOLTAGE ALARM") {
+            ThresholdSliderItem(
+                label = "Low voltage alarm (at or below)",
+                valueText = "${String.format("%.1f", telemetry.batteryLowThresholdV)} V",
+                standardText = "Std: ${String.format("%.1f", VehicleTelemetry.DEFAULT_BATTERY_LOW_V)} V",
+                value = telemetry.batteryLowThresholdV,
+                valueRange = 10.5f..12.6f,
+                onValueChange = onBatteryLowChange,
+                sliderColors = sliderColors
+            )
+            ThresholdSliderItem(
+                label = "High / overcharge alarm (at or above)",
+                valueText = "${String.format("%.1f", telemetry.batteryHighThresholdV)} V",
+                standardText = "Std: ${String.format("%.1f", VehicleTelemetry.DEFAULT_BATTERY_HIGH_V)} V",
+                value = telemetry.batteryHighThresholdV,
+                valueRange = 14.4f..16.0f,
+                onValueChange = onBatteryHighChange,
+                sliderColors = sliderColors
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsGroupCard(
+    title: String,
+    content: @Composable () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF14171E))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = title,
+            color = ObsidianColors.DimSilver,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.7.sp
+        )
+        content()
+    }
+}
+
+@Composable
+private fun ThresholdSliderItem(
+    label: String,
+    valueText: String,
+    standardText: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    onValueChange: (Float) -> Unit,
+    sliderColors: androidx.compose.material3.SliderColors
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                color = ObsidianColors.MutedSilver,
+                fontSize = 10.5.sp,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = standardText,
+                    color = ObsidianColors.DimSilver,
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text = valueText,
+                    color = ObsidianColors.PureSilver,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+        Slider(
+            value = value.coerceIn(valueRange.start, valueRange.endInclusive),
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            colors = sliderColors,
+            modifier = Modifier.height(30.dp)
+        )
+    }
 }
