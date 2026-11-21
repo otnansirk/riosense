@@ -58,6 +58,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // Stream real-time OBD-II TX/RX polling frames into the Activity Log
+            LaunchedEffect(Unit) {
+                while (true) {
+                    delay(1500L)
+                    vehicleRepository.emitRealtimePollingTick()
+                }
+            }
+
             // Play Kia Rio OEM chime periodically on Door Open / Speed Unlock / TPMS Alert / Coolant Overheat
             LaunchedEffect(
                 alarmLoaded,

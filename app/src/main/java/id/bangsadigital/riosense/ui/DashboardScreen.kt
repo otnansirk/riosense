@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,12 +35,18 @@ import androidx.compose.ui.unit.sp
 import id.bangsadigital.riosense.data.VehicleRepository
 import id.bangsadigital.riosense.model.KiaRioPaintColor
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.ui.components.ControlsMenuSheet
 import id.bangsadigital.riosense.ui.components.KiaRioInteractiveStage
 import id.bangsadigital.riosense.ui.components.LeftSpeedAndSecurityPanel
 import id.bangsadigital.riosense.ui.components.MinimizedFloatingPillView
 import id.bangsadigital.riosense.ui.components.RightEngineTelemetryPanel
 import id.bangsadigital.riosense.ui.components.SimulatorAndSettingsSheet
 import id.bangsadigital.riosense.ui.theme.ObsidianColors
+
+/**
+ * Single feature flag to hide the Simulator badge and drawer once live USB OBD-II testing is complete.
+ */
+private const val SHOW_SIMULATOR_TOOLS = true
 
 @Composable
 fun RioSenseDashboardScreen(
@@ -48,6 +55,11 @@ fun RioSenseDashboardScreen(
     onEnterPipMode: () -> Unit
 ) {
     var showSimulatorDrawer by remember { mutableStateOf(false) }
+    var showControlsDrawer by remember { mutableStateOf(false) }
+
+    val errorLogs by repository.errorLogs.collectAsState()
+    val activityLogs by repository.activityLogs.collectAsState()
+    val isActivityPaused by repository.activityLogPaused.collectAsState()
 
     if (telemetry.isMinimized) {
         MinimizedFloatingPillView(
@@ -76,9 +88,17 @@ fun RioSenseDashboardScreen(
             // 1. BORDERLESS OEM TOP BAR
             TopObsidianBar(
                 telemetry = telemetry,
+                showSimulatorEntry = SHOW_SIMULATOR_TOOLS && telemetry.simulatorMode,
                 onSelectPaint = { repository.setPaintColor(it) },
                 onToggleMute = { repository.toggleAudioMute() },
-                onOpenSimulator = { showSimulatorDrawer = !showSimulatorDrawer },
+                onOpenSimulator = {
+                    showControlsDrawer = false
+                    showSimulatorDrawer = !showSimulatorDrawer
+                },
+                onOpenControls = {
+                    showSimulatorDrawer = false
+                    showControlsDrawer = !showControlsDrawer
+                },
                 onMinimize = { repository.setMinimized(true) }
             )
 
@@ -120,14 +140,14 @@ fun RioSenseDashboardScreen(
             )
         }
 
-        // 4. SIMULATOR & SETTINGS SHEET
-        if (showSimulatorDrawer) {
+        // 4. SIMULATOR SHEET (Opened from top-left "Simulator" badge; easily hidden via SHOW_SIMULATOR_TOOLS)
+        if (SHOW_SIMULATOR_TOOLS && showSimulatorDrawer) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.72f))
                     .clickable { showSimulatorDrawer = false },
-                contentAlignment = Alignment.CenterEnd
+                contentAlignment = Alignment.CenterStart
             ) {
                 SimulatorAndSettingsSheet(
                     telemetry = telemetry,
@@ -142,7 +162,30 @@ fun RioSenseDashboardScreen(
                     onSpeedThresholdChange = { kmh -> repository.setSpeedLockThreshold(kmh) },
                     onApplyNormalPreset = { repository.applyNormalPreset() },
                     onApplyAlertPreset = { repository.applyAlertShowcasePreset() },
+                    onInjectDtc = { code -> repository.injectSimulatedDtc(code) },
                     onClose = { showSimulatorDrawer = false },
+                    modifier = Modifier.clickable(enabled = false) {}
+                )
+            }
+        }
+
+        // 5. CONTROLS MENU SHEET (Clean OBD-II Diagnostics: Error Log & Activity Log)
+        if (showControlsDrawer) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.72f))
+                    .clickable { showControlsDrawer = false },
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                ControlsMenuSheet(
+                    errorLogs = errorLogs,
+                    activityLogs = activityLogs,
+                    isActivityPaused = isActivityPaused,
+                    onToggleActivityPause = { repository.toggleActivityLogPaused() },
+                    onClearErrorLogs = { repository.clearErrorLogs() },
+                    onClearActivityLogs = { repository.clearActivityLogs() },
+                    onClose = { showControlsDrawer = false },
                     modifier = Modifier.clickable(enabled = false) {}
                 )
             }
@@ -153,9 +196,11 @@ fun RioSenseDashboardScreen(
 @Composable
 private fun TopObsidianBar(
     telemetry: VehicleTelemetry,
+    showSimulatorEntry: Boolean,
     onSelectPaint: (KiaRioPaintColor) -> Unit,
     onToggleMute: () -> Unit,
     onOpenSimulator: () -> Unit,
+    onOpenControls: () -> Unit,
     onMinimize: () -> Unit
 ) {
     Row(
@@ -165,10 +210,10 @@ private fun TopObsidianBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Brand & Subtle Status Dot
+        // Brand & Clickable Simulator Entry (or OBD Status when Simulator is hidden/off)
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
                 text = "RioSense",
@@ -178,22 +223,47 @@ private fun TopObsidianBar(
                 letterSpacing = 0.5.sp
             )
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Box(
+            if (showSimulatorEntry) {
+                Row(
                     modifier = Modifier
-                        .size(5.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF646C7E))
-                )
-                Text(
-                    text = if (telemetry.simulatorMode) "Simulator" else "OBD Connected",
-                    color = ObsidianColors.DimSilver,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Normal
-                )
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF15181F))
+                        .clickable { onOpenSimulator() }
+                        .padding(horizontal = 9.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF63B3ED))
+                    )
+                    Text(
+                        text = "Simulator",
+                        color = ObsidianColors.PureSilver,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(if (telemetry.obdConnected) Color(0xFF38A169) else Color(0xFF646C7E))
+                    )
+                    Text(
+                        text = if (telemetry.obdConnected) "OBD Connected" else "OBD Standby",
+                        color = ObsidianColors.DimSilver,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Normal
+                    )
+                }
             }
         }
 
@@ -245,7 +315,7 @@ private fun TopObsidianBar(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFF15181F))
-                    .clickable { onOpenSimulator() }
+                    .clickable { onOpenControls() }
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Text(

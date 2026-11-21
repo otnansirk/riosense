@@ -45,6 +45,7 @@ fun SimulatorAndSettingsSheet(
     onSpeedThresholdChange: (Int) -> Unit,
     onApplyNormalPreset: () -> Unit,
     onApplyAlertPreset: () -> Unit,
+    onInjectDtc: (String) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -70,13 +71,13 @@ fun SimulatorAndSettingsSheet(
         ) {
             Column {
                 Text(
-                    text = "Vehicle Controls & Finish",
+                    text = "Simulator",
                     color = ObsidianColors.PureSilver,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "Kia Rio UB 2015 Telemetry & Exterior Configuration",
+                    text = "Kia Rio UB 2015 Telemetry, Sensors & OBD Fault Simulator",
                     color = ObsidianColors.DimSilver,
                     fontSize = 11.sp
                 )
@@ -355,6 +356,37 @@ fun SimulatorAndSettingsSheet(
             valueRange = 10f..40f,
             colors = monochromeSliderColors
         )
+
+        // 6. Simulate OBD-II Diagnostic Trouble Codes (DTC) for Error Log testing
+        Text(
+            text = "Inject OBD-II Fault (DTC)",
+            color = ObsidianColors.MutedSilver,
+            fontSize = 11.sp
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("P0300", "P0118", "C1202", "B1213").forEach { dtc ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF1A1417))
+                        .border(0.7.dp, ObsidianColors.CrimsonAlert.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                        .clickable { onInjectDtc(dtc) }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = dtc,
+                        color = ObsidianColors.CrimsonAlert,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
     }
 }
 
