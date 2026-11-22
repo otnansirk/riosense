@@ -1,8 +1,12 @@
 package id.bangsadigital.riosense.data
 
+import android.content.Context
 import id.bangsadigital.riosense.model.DoorState
 import id.bangsadigital.riosense.model.KiaRioPaintColor
 import id.bangsadigital.riosense.model.LightState
+import id.bangsadigital.riosense.model.MaintenanceItem
+import id.bangsadigital.riosense.model.MaintenanceState
+import id.bangsadigital.riosense.model.ServiceRecord
 import id.bangsadigital.riosense.model.ObdActivityEntry
 import id.bangsadigital.riosense.model.ObdDirection
 import id.bangsadigital.riosense.model.ObdErrorEntry
@@ -14,19 +18,23 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-class VehicleRepository {
+class VehicleRepository(context: Context? = null) {
 
     companion object {
         private const val MAX_ERROR_LOGS = 100
         private const val MAX_ACTIVITY_LOGS = 250
     }
 
+    private val prefs: RioSensePreferences? = context?.let { RioSensePreferences(it) }
     private val idSeq = AtomicLong(1L)
     private var pollingCycleIndex = 0
+    private var accumulatedTripKm = 0.0
 
-    // Initial showcase state: Kia Rio Snow White Pearl, Rear-Right door open & Rear-Left tire at 22 PSI / 41°C
+    // Initial showcase state merged with persisted user settings & paint finish
     private val _telemetry = MutableStateFlow(
         VehicleTelemetry(
             speedKmh = 45,
@@ -45,9 +53,18 @@ class VehicleRepository {
             paintColor = KiaRioPaintColor.SNOW_WHITE_PEARL,
             obdConnected = true,
             simulatorMode = true
-        )
+        ).let { base ->
+            prefs?.loadPersistedTelemetryOverrides(base) ?: base
+        }
     )
     val telemetry: StateFlow<VehicleTelemetry> = _telemetry.asStateFlow()
+
+    private val _maintenance = MutableStateFlow(
+        prefs?.loadMaintenanceState() ?: MaintenanceState(
+            items = MaintenanceState.defaultKiaRioItems()
+        )
+    )
+    val maintenance: StateFlow<MaintenanceState> = _maintenance.asStateFlow()
 
     private val _errorLogs = MutableStateFlow<List<ObdErrorEntry>>(emptyList())
     val errorLogs: StateFlow<List<ObdErrorEntry>> = _errorLogs.asStateFlow()
@@ -60,6 +77,18 @@ class VehicleRepository {
 
     init {
         seedInitialObdLogs()
+    }
+
+    private fun persistTelemetrySettings() {
+        prefs?.saveTelemetrySettings(_telemetry.value)
+    }
+
+    private fun updateMaintenance(transform: (MaintenanceState) -> MaintenanceState) {
+        _maintenance.update { current ->
+            val next = transform(current)
+            prefs?.saveMaintenanceState(next)
+            next
+        }
     }
 
     private fun currentSourceLabel(state: VehicleTelemetry = _telemetry.value): String =
@@ -203,7 +232,19 @@ class VehicleRepository {
      */
     fun emitRealtimePollingTick() {
         val state = _telemetry.value
-        if (!state.obdConnected || _activityLogPaused.value) return
+        if (!state.obdConnected) return
+
+        // Auto-accumulate live odometer distance from OBD-II vehicle speed when connected to real car
+        if (!state.simulatorMode && state.speedKmh > 0) {
+            accumulatedTripKm += (state.speedKmh / 3600.0) * 1.5
+            if (accumulatedTripKm >= 1.0) {
+                val wholeKm = accumulatedTripKm.toInt()
+                accumulatedTripKm -= wholeKm
+                updateMaintenance { it.copy(currentOdometerKm = it.currentOdometerKm + wholeKm) }
+            }
+        }
+
+        if (_activityLogPaused.value) return
 
         val now = System.currentTimeMillis()
         val src = currentSourceLabel(state)
@@ -711,6 +752,7 @@ class VehicleRepository {
 
     fun setPaintColor(color: KiaRioPaintColor) {
         _telemetry.update { it.copy(paintColor = color) }
+        persistTelemetrySettings()
     }
 
     fun toggleLight(lightCode: String) {
@@ -764,38 +806,60 @@ class VehicleRepository {
 
     fun toggleAudioMute() {
         _telemetry.update { it.copy(audioAlarmMuted = !it.audioAlarmMuted) }
+        persistTelemetrySettings()
     }
 
-    fun setSpeedLockThreshold(kmh: Int) = updateWithAutoWake {
-        it.copy(speedLockAlarmThresholdKmh = kmh.coerceIn(10, 60))
+    fun setSpeedLockThreshold(kmh: Int) {
+        updateWithAutoWake {
+            it.copy(speedLockAlarmThresholdKmh = kmh.coerceIn(10, 60))
+        }
+        persistTelemetrySettings()
     }
 
-    fun setTpmsLowThreshold(psi: Float) = updateWithAutoWake {
-        val clamped = ((psi.coerceIn(18f, 32f) * 2f).toInt() / 2f)
-        it.copy(tpmsLowThresholdPsi = clamped)
+    fun setTpmsLowThreshold(psi: Float) {
+        updateWithAutoWake {
+            val clamped = ((psi.coerceIn(18f, 32f) * 2f).toInt() / 2f)
+            it.copy(tpmsLowThresholdPsi = clamped)
+        }
+        persistTelemetrySettings()
     }
 
-    fun setTpmsHighThreshold(psi: Float) = updateWithAutoWake {
-        val clamped = ((psi.coerceIn(34f, 45f) * 2f).toInt() / 2f)
-        it.copy(tpmsHighThresholdPsi = clamped)
+    fun setTpmsHighThreshold(psi: Float) {
+        updateWithAutoWake {
+            val clamped = ((psi.coerceIn(34f, 45f) * 2f).toInt() / 2f)
+            it.copy(tpmsHighThresholdPsi = clamped)
+        }
+        persistTelemetrySettings()
     }
 
-    fun setTpmsHighTempThreshold(tempC: Int) = updateWithAutoWake {
-        it.copy(tpmsHighTempC = tempC.coerceIn(35, 65))
+    fun setTpmsHighTempThreshold(tempC: Int) {
+        updateWithAutoWake {
+            it.copy(tpmsHighTempC = tempC.coerceIn(35, 65))
+        }
+        persistTelemetrySettings()
     }
 
-    fun setCoolantOverheatThreshold(tempC: Int) = updateWithAutoWake {
-        it.copy(coolantOverheatThresholdC = tempC.coerceIn(92, 118))
+    fun setCoolantOverheatThreshold(tempC: Int) {
+        updateWithAutoWake {
+            it.copy(coolantOverheatThresholdC = tempC.coerceIn(92, 118))
+        }
+        persistTelemetrySettings()
     }
 
-    fun setBatteryLowThreshold(volts: Float) = updateWithAutoWake {
-        val clamped = ((volts.coerceIn(10.5f, 12.6f) * 10f).toInt() / 10f)
-        it.copy(batteryLowThresholdV = clamped)
+    fun setBatteryLowThreshold(volts: Float) {
+        updateWithAutoWake {
+            val clamped = ((volts.coerceIn(10.5f, 12.6f) * 10f).toInt() / 10f)
+            it.copy(batteryLowThresholdV = clamped)
+        }
+        persistTelemetrySettings()
     }
 
-    fun setBatteryHighThreshold(volts: Float) = updateWithAutoWake {
-        val clamped = ((volts.coerceIn(14.4f, 16.0f) * 10f).toInt() / 10f)
-        it.copy(batteryHighThresholdV = clamped)
+    fun setBatteryHighThreshold(volts: Float) {
+        updateWithAutoWake {
+            val clamped = ((volts.coerceIn(14.4f, 16.0f) * 10f).toInt() / 10f)
+            it.copy(batteryHighThresholdV = clamped)
+        }
+        persistTelemetrySettings()
     }
 
     /**
@@ -862,17 +926,169 @@ class VehicleRepository {
     }
 
     /**
-     * Restores all alarm thresholds to Kia Rio UB recommended standard defaults.
+     * Restores all alarm thresholds to Kia Rio UB recommended standard defaults and persists them.
      */
-    fun resetAlertSettingsToStandard() = updateWithAutoWake {
-        it.copy(
-            speedLockAlarmThresholdKmh = VehicleTelemetry.DEFAULT_SPEED_LOCK_THRESHOLD_KMH,
-            tpmsLowThresholdPsi = VehicleTelemetry.DEFAULT_TPMS_LOW_PSI,
-            tpmsHighThresholdPsi = VehicleTelemetry.DEFAULT_TPMS_HIGH_PSI,
-            tpmsHighTempC = VehicleTelemetry.DEFAULT_TPMS_HIGH_TEMP_C,
-            coolantOverheatThresholdC = VehicleTelemetry.DEFAULT_COOLANT_OVERHEAT_C,
-            batteryLowThresholdV = VehicleTelemetry.DEFAULT_BATTERY_LOW_V,
-            batteryHighThresholdV = VehicleTelemetry.DEFAULT_BATTERY_HIGH_V
+    fun resetAlertSettingsToStandard() {
+        updateWithAutoWake {
+            it.copy(
+                speedLockAlarmThresholdKmh = VehicleTelemetry.DEFAULT_SPEED_LOCK_THRESHOLD_KMH,
+                tpmsLowThresholdPsi = VehicleTelemetry.DEFAULT_TPMS_LOW_PSI,
+                tpmsHighThresholdPsi = VehicleTelemetry.DEFAULT_TPMS_HIGH_PSI,
+                tpmsHighTempC = VehicleTelemetry.DEFAULT_TPMS_HIGH_TEMP_C,
+                coolantOverheatThresholdC = VehicleTelemetry.DEFAULT_COOLANT_OVERHEAT_C,
+                batteryLowThresholdV = VehicleTelemetry.DEFAULT_BATTERY_LOW_V,
+                batteryHighThresholdV = VehicleTelemetry.DEFAULT_BATTERY_HIGH_V
+            )
+        }
+        persistTelemetrySettings()
+    }
+
+    // --- Fast-Moving Parts & Maintenance Reminder Management (Persisted Locally) ---
+
+    fun updateOdometerKm(odometerKm: Int) = updateMaintenance {
+        it.copy(currentOdometerKm = odometerKm.coerceIn(0, 999_999))
+    }
+
+    fun setMaintenanceRemindDays(days: Int) = updateMaintenance {
+        it.copy(remindDaysBefore = days.coerceIn(1, 30))
+    }
+
+    fun setMaintenanceRemindKm(km: Int) = updateMaintenance {
+        it.copy(remindKmBefore = km.coerceIn(100, 3000))
+    }
+
+    /**
+     * Logs a new permanent service history record (supports today or backdated entries,
+     * exact odometer, optional cost in IDR, and optional part/brand note).
+     */
+    fun logMaintenanceServiceRecord(
+        itemId: String,
+        dateMs: Long,
+        odometerKm: Int,
+        costIdr: Long,
+        note: String
+    ) {
+        val clampedOdo = odometerKm.coerceIn(0, 999_999)
+        val clampedCost = costIdr.coerceAtLeast(0L)
+        val trimmedNote = note.trim()
+        val record = ServiceRecord(
+            id = "srv_${UUID.randomUUID().toString().take(8)}",
+            dateMs = dateMs,
+            odometerKm = clampedOdo,
+            costIdr = clampedCost,
+            note = trimmedNote
+        )
+        updateMaintenance { state ->
+            val updatedOdometer = maxOf(state.currentOdometerKm, clampedOdo)
+            state.copy(
+                currentOdometerKm = updatedOdometer,
+                items = state.items.map { item ->
+                    if (item.id == itemId) {
+                        val nextHistory = (listOf(record) + item.history)
+                            .sortedByDescending { it.dateMs }
+                        val latest = nextHistory.first()
+                        item.copy(
+                            lastServiceDateMs = latest.dateMs,
+                            lastServiceOdometerKm = latest.odometerKm,
+                            history = nextHistory
+                        )
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
+    /**
+     * Deletes a specific history record from a part and recalculates its latest service date/odometer.
+     */
+    fun deleteMaintenanceHistoryRecord(itemId: String, recordId: String) = updateMaintenance { state ->
+        state.copy(
+            items = state.items.map { item ->
+                if (item.id == itemId) {
+                    val remaining = item.history.filterNot { it.id == recordId }
+                    val latest = remaining.firstOrNull()
+                    item.copy(
+                        lastServiceDateMs = latest?.dateMs ?: item.lastServiceDateMs,
+                        lastServiceOdometerKm = latest?.odometerKm ?: item.lastServiceOdometerKm,
+                        history = remaining
+                    )
+                } else {
+                    item
+                }
+            }
+        )
+    }
+
+    fun updateMaintenanceItemSchedule(
+        itemId: String,
+        intervalMonths: Int,
+        intervalKm: Int
+    ) = updateMaintenance { state ->
+        state.copy(
+            items = state.items.map { item ->
+                if (item.id == itemId) {
+                    item.copy(
+                        intervalMonths = intervalMonths.coerceIn(0, 60),
+                        intervalKm = intervalKm.coerceIn(0, 100_000)
+                    )
+                } else {
+                    item
+                }
+            }
+        )
+    }
+
+    fun addCustomMaintenanceItem(
+        name: String,
+        intervalMonths: Int,
+        intervalKm: Int,
+        initialDateMs: Long,
+        initialOdometerKm: Int,
+        initialCostIdr: Long,
+        initialNote: String
+    ) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        val clampedOdo = initialOdometerKm.coerceIn(0, 999_999)
+        val clampedCost = initialCostIdr.coerceAtLeast(0L)
+        val firstRecord = ServiceRecord(
+            id = "srv_${UUID.randomUUID().toString().take(8)}",
+            dateMs = initialDateMs,
+            odometerKm = clampedOdo,
+            costIdr = clampedCost,
+            note = initialNote.trim()
+        )
+        updateMaintenance { state ->
+            val newItem = MaintenanceItem(
+                id = "custom_${UUID.randomUUID().toString().take(8)}",
+                name = trimmed,
+                category = "Custom",
+                lastServiceDateMs = initialDateMs,
+                lastServiceOdometerKm = clampedOdo,
+                intervalMonths = intervalMonths.coerceIn(0, 60),
+                intervalKm = intervalKm.coerceIn(0, 100_000),
+                isCustom = true,
+                history = listOf(firstRecord)
+            )
+            state.copy(
+                currentOdometerKm = maxOf(state.currentOdometerKm, clampedOdo),
+                items = state.items + newItem
+            )
+        }
+    }
+
+    fun deleteCustomMaintenanceItem(itemId: String) = updateMaintenance { state ->
+        state.copy(items = state.items.filterNot { it.id == itemId && it.isCustom })
+    }
+
+    fun resetMaintenanceToStandard() = updateMaintenance { state ->
+        MaintenanceState(
+            currentOdometerKm = state.currentOdometerKm,
+            remindDaysBefore = MaintenanceState.DEFAULT_REMIND_DAYS_BEFORE,
+            remindKmBefore = MaintenanceState.DEFAULT_REMIND_KM_BEFORE,
+            items = MaintenanceState.defaultKiaRioItems(baseOdometerKm = state.currentOdometerKm)
         )
     }
 

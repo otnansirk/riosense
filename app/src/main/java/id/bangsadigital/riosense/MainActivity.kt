@@ -23,10 +23,13 @@ import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
-    private val vehicleRepository = VehicleRepository()
+    private lateinit var vehicleRepository: VehicleRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize repository with persistent local storage (SharedPreferences)
+        vehicleRepository = VehicleRepository(applicationContext)
 
         // Keep the Head Unit screen awake while the ignition/app is active
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

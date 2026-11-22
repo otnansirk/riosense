@@ -34,8 +34,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import id.bangsadigital.riosense.data.VehicleRepository
 import id.bangsadigital.riosense.model.KiaRioPaintColor
+import id.bangsadigital.riosense.model.MaintenanceState
+import id.bangsadigital.riosense.model.MaintenanceStatus
 import id.bangsadigital.riosense.model.VehicleTelemetry
 import id.bangsadigital.riosense.ui.components.ControlsMenuSheet
+import id.bangsadigital.riosense.ui.components.ControlsTab
 import id.bangsadigital.riosense.ui.components.KiaRioInteractiveStage
 import id.bangsadigital.riosense.ui.components.LeftSpeedAndSecurityPanel
 import id.bangsadigital.riosense.ui.components.MinimizedFloatingPillView
@@ -56,10 +59,13 @@ fun RioSenseDashboardScreen(
 ) {
     var showSimulatorDrawer by remember { mutableStateOf(false) }
     var showControlsDrawer by remember { mutableStateOf(false) }
+    var controlsInitialTab by remember { mutableStateOf<ControlsTab?>(null) }
 
     val errorLogs by repository.errorLogs.collectAsState()
     val activityLogs by repository.activityLogs.collectAsState()
     val isActivityPaused by repository.activityLogPaused.collectAsState()
+    val maintenance by repository.maintenance.collectAsState()
+    val dueServiceItems = remember(maintenance) { maintenance.dueOrOverdueItems() }
 
     if (telemetry.isMinimized) {
         MinimizedFloatingPillView(
@@ -89,6 +95,7 @@ fun RioSenseDashboardScreen(
             TopObsidianBar(
                 telemetry = telemetry,
                 showSimulatorEntry = SHOW_SIMULATOR_TOOLS && telemetry.simulatorMode,
+                hasServiceReminder = dueServiceItems.isNotEmpty(),
                 onSelectPaint = { repository.setPaintColor(it) },
                 onToggleMute = { repository.toggleAudioMute() },
                 onOpenSimulator = {
@@ -97,6 +104,7 @@ fun RioSenseDashboardScreen(
                 },
                 onOpenControls = {
                     showSimulatorDrawer = false
+                    controlsInitialTab = null
                     showControlsDrawer = !showControlsDrawer
                 },
                 onMinimize = { repository.setMinimized(true) }
@@ -133,10 +141,16 @@ fun RioSenseDashboardScreen(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // 3. BORDERLESS MINIMALIST STATUS FOOTER
+            // 3. BORDERLESS MINIMALIST STATUS FOOTER (Live Alerts > Service Reminders > Nominal)
             BottomAlertBanner(
                 telemetry = telemetry,
-                onAcknowledgeOrFix = { repository.applyNormalPreset() }
+                maintenance = maintenance,
+                onAcknowledgeOrFix = { repository.applyNormalPreset() },
+                onOpenServiceReminders = {
+                    showSimulatorDrawer = false
+                    controlsInitialTab = ControlsTab.SERVICE
+                    showControlsDrawer = true
+                }
             )
         }
 
@@ -169,7 +183,7 @@ fun RioSenseDashboardScreen(
             }
         }
 
-        // 5. CONTROLS MENU SHEET (OBD-II Diagnostics: Error Log, Activity Log & Alarm Settings)
+        // 5. CONTROLS MENU SHEET (OBD-II Diagnostics: Error Log, Activity Log, Service & Settings)
         if (showControlsDrawer) {
             Box(
                 modifier = Modifier
@@ -180,12 +194,31 @@ fun RioSenseDashboardScreen(
             ) {
                 ControlsMenuSheet(
                     telemetry = telemetry,
+                    maintenance = maintenance,
+                    initialTab = controlsInitialTab,
                     errorLogs = errorLogs,
                     activityLogs = activityLogs,
                     isActivityPaused = isActivityPaused,
                     onToggleActivityPause = { repository.toggleActivityLogPaused() },
                     onClearErrorLogs = { repository.clearErrorLogs() },
                     onClearActivityLogs = { repository.clearActivityLogs() },
+                    onUpdateOdometer = { km -> repository.updateOdometerKm(km) },
+                    onRemindDaysChange = { days -> repository.setMaintenanceRemindDays(days) },
+                    onRemindKmChange = { km -> repository.setMaintenanceRemindKm(km) },
+                    onLogServiceRecord = { id, dateMs, odoKm, costIdr, note ->
+                        repository.logMaintenanceServiceRecord(id, dateMs, odoKm, costIdr, note)
+                    },
+                    onDeleteHistoryRecord = { id, recId ->
+                        repository.deleteMaintenanceHistoryRecord(id, recId)
+                    },
+                    onUpdateServiceSchedule = { id, months, km ->
+                        repository.updateMaintenanceItemSchedule(id, months, km)
+                    },
+                    onAddCustomServiceItem = { name, months, km, dateMs, odoKm, costIdr, note ->
+                        repository.addCustomMaintenanceItem(name, months, km, dateMs, odoKm, costIdr, note)
+                    },
+                    onDeleteCustomServiceItem = { id -> repository.deleteCustomMaintenanceItem(id) },
+                    onResetMaintenanceToStandard = { repository.resetMaintenanceToStandard() },
                     onSpeedLockThresholdChange = { kmh -> repository.setSpeedLockThreshold(kmh) },
                     onTpmsLowPsiChange = { psi -> repository.setTpmsLowThreshold(psi) },
                     onTpmsHighPsiChange = { psi -> repository.setTpmsHighThreshold(psi) },
@@ -206,6 +239,7 @@ fun RioSenseDashboardScreen(
 private fun TopObsidianBar(
     telemetry: VehicleTelemetry,
     showSimulatorEntry: Boolean,
+    hasServiceReminder: Boolean,
     onSelectPaint: (KiaRioPaintColor) -> Unit,
     onToggleMute: () -> Unit,
     onOpenSimulator: () -> Unit,
@@ -320,13 +354,23 @@ private fun TopObsidianBar(
                 )
             }
 
-            Box(
+            Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFF15181F))
                     .clickable { onOpenControls() }
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                if (hasServiceReminder) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFE6A23C))
+                    )
+                }
                 Text(
                     text = "Controls",
                     color = ObsidianColors.PureSilver,
@@ -356,18 +400,46 @@ private fun TopObsidianBar(
 @Composable
 private fun BottomAlertBanner(
     telemetry: VehicleTelemetry,
-    onAcknowledgeOrFix: () -> Unit
+    maintenance: MaintenanceState,
+    onAcknowledgeOrFix: () -> Unit,
+    onOpenServiceReminders: () -> Unit
 ) {
     val alerts = telemetry.activeAlerts
     val hasAlert = alerts.isNotEmpty()
+    val nowMs = System.currentTimeMillis()
+    val dueServices = maintenance.dueOrOverdueItems(nowMs)
+    val hasServiceReminder = !hasAlert && dueServices.isNotEmpty()
+    val hasOverdueService = dueServices.any {
+        it.evaluateStatus(
+            nowMs,
+            maintenance.currentOdometerKm,
+            maintenance.remindDaysBefore,
+            maintenance.remindKmBefore
+        ) == MaintenanceStatus.OVERDUE
+    }
 
-    val bg = if (hasAlert) ObsidianColors.AlertSurface else Color(0xFF0B0C0F)
+    val bg = when {
+        hasAlert -> ObsidianColors.AlertSurface
+        hasServiceReminder -> Color(0xFF17140E)
+        else -> Color(0xFF0B0C0F)
+    }
+
+    val dotColor = when {
+        hasAlert -> ObsidianColors.CrimsonAlert
+        hasServiceReminder && hasOverdueService -> ObsidianColors.CrimsonAlert
+        hasServiceReminder -> Color(0xFFE6A23C)
+        else -> Color(0xFF4C5260)
+    }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(bg)
+            .then(
+                if (hasServiceReminder) Modifier.clickable { onOpenServiceReminders() }
+                else Modifier
+            )
             .padding(horizontal = 14.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -380,18 +452,24 @@ private fun BottomAlertBanner(
                 modifier = Modifier
                     .size(6.dp)
                     .clip(CircleShape)
-                    .background(if (hasAlert) ObsidianColors.CrimsonAlert else Color(0xFF4C5260))
+                    .background(dotColor)
             )
             Spacer(modifier = Modifier.width(10.dp))
             Text(
-                text = if (hasAlert) {
-                    alerts.joinToString("  ·  ")
-                } else {
-                    "Kia Rio UB 2015  ·  ${telemetry.paintColor.displayName}  ·  All systems nominal"
+                text = when {
+                    hasAlert -> alerts.joinToString("  ·  ")
+                    hasServiceReminder -> {
+                        val summary = dueServices.take(2).joinToString("  ·  ") { item ->
+                            "${item.name} (${item.quickSummary(nowMs, maintenance.currentOdometerKm)})"
+                        }
+                        val extra = if (dueServices.size > 2) " +${dueServices.size - 2} more" else ""
+                        "SERVICE REMINDER: $summary$extra"
+                    }
+                    else -> "Kia Rio UB 2015  ·  ${telemetry.paintColor.displayName}  ·  All systems nominal"
                 },
-                color = if (hasAlert) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                color = if (hasAlert || hasServiceReminder) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
                 fontSize = 11.sp,
-                fontWeight = if (hasAlert) FontWeight.Medium else FontWeight.Normal,
+                fontWeight = if (hasAlert || hasServiceReminder) FontWeight.Medium else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -409,6 +487,22 @@ private fun BottomAlertBanner(
                 Text(
                     text = "Dismiss",
                     color = ObsidianColors.PureSilver,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        } else if (hasServiceReminder) {
+            Spacer(modifier = Modifier.width(10.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF2A2214))
+                    .clickable { onOpenServiceReminders() }
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "Service",
+                    color = Color(0xFFE6A23C),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium
                 )

@@ -1,5 +1,6 @@
 package id.bangsadigital.riosense.ui.components
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,12 +31,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import id.bangsadigital.riosense.model.MaintenanceState
+import id.bangsadigital.riosense.model.MaintenanceStatus
 import id.bangsadigital.riosense.model.ObdActivityEntry
 import id.bangsadigital.riosense.model.ObdDirection
 import id.bangsadigital.riosense.model.ObdErrorEntry
@@ -46,21 +51,33 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private enum class ControlsTab(val label: String) {
-    ERROR_LOG("Error Log"),
-    ACTIVITY_LOG("Activity Log"),
-    SETTINGS("Settings")
+enum class ControlsTab(val label: String, val subtitle: String) {
+    ERROR_LOG("Error Log", "OBD-II detected faults & DTC history"),
+    ACTIVITY_LOG("Activity Log", "Real-time OBD-II TX/RX stream & PIDs"),
+    SERVICE("Service", "Fast-moving parts & maintenance reminders"),
+    SETTINGS("Settings", "Custom alarm thresholds & standard reset")
 }
 
 @Composable
 fun ControlsMenuSheet(
     telemetry: VehicleTelemetry,
+    maintenance: MaintenanceState,
+    initialTab: ControlsTab? = null,
     errorLogs: List<ObdErrorEntry>,
     activityLogs: List<ObdActivityEntry>,
     isActivityPaused: Boolean,
     onToggleActivityPause: () -> Unit,
     onClearErrorLogs: () -> Unit,
     onClearActivityLogs: () -> Unit,
+    onUpdateOdometer: (Int) -> Unit,
+    onRemindDaysChange: (Int) -> Unit,
+    onRemindKmChange: (Int) -> Unit,
+    onLogServiceRecord: (itemId: String, dateMs: Long, odometerKm: Int, costIdr: Long, note: String) -> Unit,
+    onDeleteHistoryRecord: (itemId: String, recordId: String) -> Unit,
+    onUpdateServiceSchedule: (String, Int, Int) -> Unit,
+    onAddCustomServiceItem: (name: String, months: Int, km: Int, dateMs: Long, odoKm: Int, costIdr: Long, note: String) -> Unit,
+    onDeleteCustomServiceItem: (String) -> Unit,
+    onResetMaintenanceToStandard: () -> Unit,
     onSpeedLockThresholdChange: (Int) -> Unit,
     onTpmsLowPsiChange: (Float) -> Unit,
     onTpmsHighPsiChange: (Float) -> Unit,
@@ -72,9 +89,61 @@ fun ControlsMenuSheet(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var activeTab by remember { mutableStateOf(ControlsTab.ERROR_LOG) }
+    var activeSection by remember(initialTab) { mutableStateOf(initialTab) }
     var selectedError by remember { mutableStateOf<ObdErrorEntry?>(null) }
     var selectedActivity by remember { mutableStateOf<ObdActivityEntry?>(null) }
+    var selectedServiceId by remember { mutableStateOf<String?>(null) }
+    var showAddServiceForm by remember { mutableStateOf(false) }
+    var showRecordServiceForm by remember { mutableStateOf(false) }
+
+    val dueServiceItems = remember(maintenance) { maintenance.dueOrOverdueItems() }
+    val hasOverdueService = dueServiceItems.any {
+        it.evaluateStatus(
+            System.currentTimeMillis(),
+            maintenance.currentOdometerKm,
+            maintenance.remindDaysBefore,
+            maintenance.remindKmBefore
+        ) == MaintenanceStatus.OVERDUE
+    }
+
+    val headerTitle = when {
+        activeSection == ControlsTab.ERROR_LOG && selectedError != null -> "Error Detail"
+        activeSection == ControlsTab.ACTIVITY_LOG && selectedActivity != null -> "Activity Detail"
+        activeSection == ControlsTab.SERVICE && showAddServiceForm -> "New Fast-Moving Part"
+        activeSection == ControlsTab.SERVICE && showRecordServiceForm -> "Record Service"
+        activeSection == ControlsTab.SERVICE && selectedServiceId != null -> "Service Detail"
+        activeSection != null -> activeSection!!.label
+        else -> "Controls"
+    }
+
+    val headerSubtitle = when {
+        activeSection == ControlsTab.ERROR_LOG && selectedError != null -> selectedError!!.code
+        activeSection == ControlsTab.ACTIVITY_LOG && selectedActivity != null -> "PID ${selectedActivity!!.pid}"
+        activeSection == ControlsTab.SERVICE && showAddServiceForm -> "Add custom maintenance schedule"
+        activeSection == ControlsTab.SERVICE && showRecordServiceForm -> "Log today or past service date, cost & notes"
+        activeSection == ControlsTab.SERVICE && selectedServiceId != null -> "Schedule & permanent service history"
+        activeSection != null -> activeSection!!.subtitle
+        else -> "OBD-II Diagnostics, Service & Settings"
+    }
+
+    fun navigateBackOneLevel() {
+        when {
+            activeSection == ControlsTab.ERROR_LOG && selectedError != null -> selectedError = null
+            activeSection == ControlsTab.ACTIVITY_LOG && selectedActivity != null -> selectedActivity = null
+            activeSection == ControlsTab.SERVICE && showAddServiceForm -> showAddServiceForm = false
+            activeSection == ControlsTab.SERVICE && showRecordServiceForm -> showRecordServiceForm = false
+            activeSection == ControlsTab.SERVICE && selectedServiceId != null -> selectedServiceId = null
+            activeSection != null -> {
+                activeSection = null
+                selectedError = null
+                selectedActivity = null
+                selectedServiceId = null
+                showAddServiceForm = false
+                showRecordServiceForm = false
+            }
+            else -> onClose()
+        }
+    }
 
     Column(
         modifier = modifier
@@ -85,96 +154,128 @@ fun ControlsMenuSheet(
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Header
+        // Header: Top-Left Back Arrow (steps back 1 level at a time) + Dynamic Section Title
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Column {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF181B22))
+                    .clickable { navigateBackOneLevel() },
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.size(14.dp)) {
+                    val w = size.width
+                    val h = size.height
+                    val cy = h * 0.5f
+                    val leftX = w * 0.16f
+                    val rightX = w * 0.84f
+                    val headX = w * 0.46f
+                    val stroke = 1.6.dp.toPx()
+                    drawLine(
+                        color = ObsidianColors.PureSilver,
+                        start = Offset(rightX, cy),
+                        end = Offset(leftX, cy),
+                        strokeWidth = stroke,
+                        cap = StrokeCap.Round
+                    )
+                    drawLine(
+                        color = ObsidianColors.PureSilver,
+                        start = Offset(headX, h * 0.22f),
+                        end = Offset(leftX, cy),
+                        strokeWidth = stroke,
+                        cap = StrokeCap.Round
+                    )
+                    drawLine(
+                        color = ObsidianColors.PureSilver,
+                        start = Offset(headX, h * 0.78f),
+                        end = Offset(leftX, cy),
+                        strokeWidth = stroke,
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Controls",
+                    text = headerTitle,
                     color = ObsidianColors.PureSilver,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "OBD-II Diagnostics, Logs & Alarm Settings",
+                    text = headerSubtitle,
                     color = ObsidianColors.DimSilver,
-                    fontSize = 11.sp
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF181B22))
-                    .clickable { onClose() }
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            ) {
-                Text(
-                    text = "Done",
-                    color = ObsidianColors.PureSilver,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
 
-        // 3-Menu Selector: Error Log | Activity Log | Settings
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF14171E))
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            ControlsMenuTabButton(
-                label = ControlsTab.ERROR_LOG.label,
-                badgeText = if (errorLogs.isNotEmpty()) errorLogs.size.toString() else null,
-                badgeColor = ObsidianColors.CrimsonAlert,
-                selected = activeTab == ControlsTab.ERROR_LOG,
-                onClick = {
-                    activeTab = ControlsTab.ERROR_LOG
-                    selectedError = null
-                    selectedActivity = null
-                },
-                modifier = Modifier.weight(1f)
-            )
-            ControlsMenuTabButton(
-                label = ControlsTab.ACTIVITY_LOG.label,
-                badgeText = if (activityLogs.isNotEmpty()) activityLogs.size.toString() else null,
-                badgeColor = if (isActivityPaused) ObsidianColors.DimSilver else Color(0xFF38A169),
-                selected = activeTab == ControlsTab.ACTIVITY_LOG,
-                onClick = {
-                    activeTab = ControlsTab.ACTIVITY_LOG
-                    selectedError = null
-                    selectedActivity = null
-                },
-                modifier = Modifier.weight(1f)
-            )
-            ControlsMenuTabButton(
-                label = ControlsTab.SETTINGS.label,
-                badgeText = if (telemetry.isCustomAlertSettings) "Custom" else null,
-                badgeColor = Color(0xFF63B3ED),
-                selected = activeTab == ControlsTab.SETTINGS,
-                onClick = {
-                    activeTab = ControlsTab.SETTINGS
-                    selectedError = null
-                    selectedActivity = null
-                },
-                modifier = Modifier.weight(1f)
-            )
-        }
+        // Content Body: Clean Flat Menu List OR Full-Sheet Active Section
+        when (activeSection) {
+            null -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    ControlsMenuRowItem(
+                        title = ControlsTab.SERVICE.label,
+                        subtitle = ControlsTab.SERVICE.subtitle,
+                        statusText = when {
+                            hasOverdueService -> "${dueServiceItems.size} overdue"
+                            dueServiceItems.isNotEmpty() -> "${dueServiceItems.size} due soon"
+                            else -> "All OK"
+                        },
+                        statusColor = when {
+                            hasOverdueService -> ObsidianColors.CrimsonAlert
+                            dueServiceItems.isNotEmpty() -> Color(0xFFE6A23C)
+                            else -> ObsidianColors.DimSilver
+                        },
+                        showDivider = true,
+                        onClick = { activeSection = ControlsTab.SERVICE }
+                    )
 
-        // Content Body
-        when (activeTab) {
+                    ControlsMenuRowItem(
+                        title = ControlsTab.SETTINGS.label,
+                        subtitle = ControlsTab.SETTINGS.subtitle,
+                        statusText = if (telemetry.isCustomAlertSettings) "Custom" else "Standard",
+                        statusColor = if (telemetry.isCustomAlertSettings) Color(0xFF63B3ED) else ObsidianColors.DimSilver,
+                        showDivider = true,
+                        onClick = { activeSection = ControlsTab.SETTINGS }
+                    )
+
+                    ControlsMenuRowItem(
+                        title = ControlsTab.ERROR_LOG.label,
+                        subtitle = ControlsTab.ERROR_LOG.subtitle,
+                        statusText = if (errorLogs.isNotEmpty()) "${errorLogs.size} detected" else "Clean",
+                        statusColor = if (errorLogs.isNotEmpty()) ObsidianColors.CrimsonAlert else ObsidianColors.DimSilver,
+                        showDivider = true,
+                        onClick = { activeSection = ControlsTab.ERROR_LOG }
+                    )
+
+                    ControlsMenuRowItem(
+                        title = ControlsTab.ACTIVITY_LOG.label,
+                        subtitle = ControlsTab.ACTIVITY_LOG.subtitle,
+                        statusText = if (isActivityPaused) "Paused" else "Live · ${activityLogs.size}",
+                        statusColor = if (isActivityPaused) ObsidianColors.DimSilver else Color(0xFF68D391),
+                        showDivider = false,
+                        onClick = { activeSection = ControlsTab.ACTIVITY_LOG }
+                    )
+                }
+            }
+
             ControlsTab.ERROR_LOG -> {
                 val detail = selectedError
                 if (detail != null) {
                     ErrorLogDetailView(
                         entry = detail,
-                        onBack = { selectedError = null },
                         modifier = Modifier.weight(1f)
                     )
                 } else {
@@ -192,7 +293,6 @@ fun ControlsMenuSheet(
                 if (detail != null) {
                     ActivityLogDetailView(
                         entry = detail,
-                        onBack = { selectedActivity = null },
                         modifier = Modifier.weight(1f)
                     )
                 } else {
@@ -205,6 +305,28 @@ fun ControlsMenuSheet(
                         modifier = Modifier.weight(1f)
                     )
                 }
+            }
+
+            ControlsTab.SERVICE -> {
+                MaintenanceServiceTabContent(
+                    maintenance = maintenance,
+                    selectedItemId = selectedServiceId,
+                    showAddForm = showAddServiceForm,
+                    showRecordForm = showRecordServiceForm,
+                    onShowAddFormChange = { showAddServiceForm = it },
+                    onShowRecordFormChange = { showRecordServiceForm = it },
+                    onSelectItem = { selectedServiceId = it },
+                    onUpdateOdometer = onUpdateOdometer,
+                    onRemindDaysChange = onRemindDaysChange,
+                    onRemindKmChange = onRemindKmChange,
+                    onLogServiceRecord = onLogServiceRecord,
+                    onDeleteHistoryRecord = onDeleteHistoryRecord,
+                    onUpdateSchedule = onUpdateServiceSchedule,
+                    onAddCustomItem = onAddCustomServiceItem,
+                    onDeleteCustomItem = onDeleteCustomServiceItem,
+                    onResetStandard = onResetMaintenanceToStandard,
+                    modifier = Modifier.weight(1f)
+                )
             }
 
             ControlsTab.SETTINGS -> {
@@ -226,44 +348,65 @@ fun ControlsMenuSheet(
 }
 
 @Composable
-private fun ControlsMenuTabButton(
-    label: String,
-    badgeText: String?,
-    badgeColor: Color,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+private fun ControlsMenuRowItem(
+    title: String,
+    subtitle: String,
+    statusText: String,
+    statusColor: Color,
+    showDivider: Boolean,
+    onClick: () -> Unit
 ) {
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) Color(0xFF212632) else Color.Transparent)
-            .clickable { onClick() }
-            .padding(vertical = 8.dp, horizontal = 10.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            color = if (selected) ObsidianColors.PureSilver else ObsidianColors.MutedSilver,
-            fontSize = 11.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
-        )
-        if (badgeText != null) {
-            Spacer(modifier = Modifier.width(6.dp))
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(badgeColor.copy(alpha = 0.22f))
-                    .padding(horizontal = 6.dp, vertical = 1.dp)
-            ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onClick() }
+                .padding(vertical = 9.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = badgeText,
-                    color = badgeColor,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.SemiBold
+                    text = title,
+                    color = ObsidianColors.PureSilver,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(1.dp))
+                Text(
+                    text = subtitle,
+                    color = ObsidianColors.DimSilver,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = statusText,
+                    color = statusColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "›",
+                    color = ObsidianColors.DimSilver,
+                    fontSize = 16.sp
+                )
+            }
+        }
+
+        if (showDivider) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(0.7.dp)
+                    .background(Color(0xFF1A1E27))
+            )
         }
     }
 }
@@ -399,7 +542,6 @@ private fun ErrorLogListView(
 @Composable
 private fun ErrorLogDetailView(
     entry: ObdErrorEntry,
-    onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val accent = severityColor(entry.severity)
@@ -410,33 +552,6 @@ private fun ErrorLogDetailView(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF181B22))
-                    .clickable { onBack() }
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
-            ) {
-                Text(
-                    text = "Back",
-                    color = ObsidianColors.PureSilver,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-            Text(
-                text = entry.severity.label.uppercase(),
-                color = accent,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -446,21 +561,36 @@ private fun ErrorLogDetailView(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = entry.code,
+                        color = accent,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        text = entry.title,
+                        color = ObsidianColors.PureSilver,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Text(
-                    text = entry.code,
+                    text = entry.severity.label.uppercase(),
                     color = accent,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    text = entry.title,
-                    color = ObsidianColors.PureSilver,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
 
@@ -673,7 +803,6 @@ private fun ActivityLogListView(
 @Composable
 private fun ActivityLogDetailView(
     entry: ObdActivityEntry,
-    onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isTx = entry.direction == ObdDirection.TX
@@ -685,34 +814,6 @@ private fun ActivityLogDetailView(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF181B22))
-                    .clickable { onBack() }
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
-            ) {
-                Text(
-                    text = "Back",
-                    color = ObsidianColors.PureSilver,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-            Text(
-                text = if (isTx) "TX · SENT TO ECU" else "RX · RECEIVED FROM ECU",
-                color = dirColor,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace
-            )
-        }
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -722,21 +823,37 @@ private fun ActivityLogDetailView(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "PID ${entry.pid}",
+                        color = dirColor,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        text = entry.parameterName,
+                        color = ObsidianColors.PureSilver,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Text(
-                    text = "PID ${entry.pid}",
+                    text = if (isTx) "TX · SENT TO ECU" else "RX · RECEIVED FROM ECU",
                     color = dirColor,
-                    fontSize = 14.sp,
+                    fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    text = entry.parameterName,
-                    color = ObsidianColors.PureSilver,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
                 )
             }
 
