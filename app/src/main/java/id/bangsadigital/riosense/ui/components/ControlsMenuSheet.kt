@@ -46,6 +46,8 @@ import id.bangsadigital.riosense.model.ObdDirection
 import id.bangsadigital.riosense.model.ObdErrorEntry
 import id.bangsadigital.riosense.model.ObdErrorSeverity
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.ui.i18n.AppLanguage
+import id.bangsadigital.riosense.ui.i18n.appStrings
 import id.bangsadigital.riosense.ui.theme.ObsidianColors
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -62,6 +64,8 @@ enum class ControlsTab(val label: String, val subtitle: String) {
 fun ControlsMenuSheet(
     telemetry: VehicleTelemetry,
     maintenance: MaintenanceState,
+    currentLanguage: AppLanguage,
+    onLanguageChange: (AppLanguage) -> Unit,
     initialTab: ControlsTab? = null,
     errorLogs: List<ObdErrorEntry>,
     activityLogs: List<ObdActivityEntry>,
@@ -106,24 +110,32 @@ fun ControlsMenuSheet(
         ) == MaintenanceStatus.OVERDUE
     }
 
+    val s = appStrings()
+
     val headerTitle = when {
-        activeSection == ControlsTab.ERROR_LOG && selectedError != null -> "Error Detail"
-        activeSection == ControlsTab.ACTIVITY_LOG && selectedActivity != null -> "Activity Detail"
-        activeSection == ControlsTab.SERVICE && showAddServiceForm -> "New Fast-Moving Part"
-        activeSection == ControlsTab.SERVICE && showRecordServiceForm -> "Record Service"
-        activeSection == ControlsTab.SERVICE && selectedServiceId != null -> "Service Detail"
-        activeSection != null -> activeSection!!.label
-        else -> "Controls"
+        activeSection == ControlsTab.ERROR_LOG && selectedError != null -> s.errorDetailTitle
+        activeSection == ControlsTab.ACTIVITY_LOG && selectedActivity != null -> s.activityDetailTitle
+        activeSection == ControlsTab.SERVICE && showAddServiceForm -> s.newPartTitle
+        activeSection == ControlsTab.SERVICE && showRecordServiceForm -> s.recordServiceTitle
+        activeSection == ControlsTab.SERVICE && selectedServiceId != null -> s.serviceDetailTitle
+        activeSection == ControlsTab.SERVICE -> s.serviceTitle
+        activeSection == ControlsTab.SETTINGS -> s.settingsTitle
+        activeSection == ControlsTab.ERROR_LOG -> s.errorLogTitle
+        activeSection == ControlsTab.ACTIVITY_LOG -> s.activityLogTitle
+        else -> s.controlsTitle
     }
 
     val headerSubtitle = when {
         activeSection == ControlsTab.ERROR_LOG && selectedError != null -> selectedError!!.code
         activeSection == ControlsTab.ACTIVITY_LOG && selectedActivity != null -> "PID ${selectedActivity!!.pid}"
-        activeSection == ControlsTab.SERVICE && showAddServiceForm -> "Add custom maintenance schedule"
-        activeSection == ControlsTab.SERVICE && showRecordServiceForm -> "Log today or past service date, cost & notes"
-        activeSection == ControlsTab.SERVICE && selectedServiceId != null -> "Schedule & permanent service history"
-        activeSection != null -> activeSection!!.subtitle
-        else -> "OBD-II Diagnostics, Service & Settings"
+        activeSection == ControlsTab.SERVICE && showAddServiceForm -> s.newPartSubtitle
+        activeSection == ControlsTab.SERVICE && showRecordServiceForm -> s.recordServiceSubtitle
+        activeSection == ControlsTab.SERVICE && selectedServiceId != null -> s.serviceDetailSubtitle
+        activeSection == ControlsTab.SERVICE -> s.serviceSubtitle
+        activeSection == ControlsTab.SETTINGS -> s.settingsSubtitle
+        activeSection == ControlsTab.ERROR_LOG -> s.errorLogSubtitle
+        activeSection == ControlsTab.ACTIVITY_LOG -> s.activityLogSubtitle
+        else -> s.controlsSubtitle
     }
 
     fun navigateBackOneLevel() {
@@ -226,12 +238,12 @@ fun ControlsMenuSheet(
                         .verticalScroll(rememberScrollState())
                 ) {
                     ControlsMenuRowItem(
-                        title = ControlsTab.SERVICE.label,
-                        subtitle = ControlsTab.SERVICE.subtitle,
+                        title = s.serviceTitle,
+                        subtitle = s.serviceSubtitle,
                         statusText = when {
-                            hasOverdueService -> "${dueServiceItems.size} overdue"
-                            dueServiceItems.isNotEmpty() -> "${dueServiceItems.size} due soon"
-                            else -> "All OK"
+                            hasOverdueService -> s.statusOverdue(dueServiceItems.size)
+                            dueServiceItems.isNotEmpty() -> s.statusDueSoon(dueServiceItems.size)
+                            else -> s.statusAllOk
                         },
                         statusColor = when {
                             hasOverdueService -> ObsidianColors.CrimsonAlert
@@ -243,27 +255,27 @@ fun ControlsMenuSheet(
                     )
 
                     ControlsMenuRowItem(
-                        title = ControlsTab.SETTINGS.label,
-                        subtitle = ControlsTab.SETTINGS.subtitle,
-                        statusText = if (telemetry.isCustomAlertSettings) "Custom" else "Standard",
+                        title = s.settingsTitle,
+                        subtitle = s.settingsSubtitle,
+                        statusText = if (telemetry.isCustomAlertSettings) s.statusCustom else s.statusStandard,
                         statusColor = if (telemetry.isCustomAlertSettings) Color(0xFF63B3ED) else ObsidianColors.DimSilver,
                         showDivider = true,
                         onClick = { activeSection = ControlsTab.SETTINGS }
                     )
 
                     ControlsMenuRowItem(
-                        title = ControlsTab.ERROR_LOG.label,
-                        subtitle = ControlsTab.ERROR_LOG.subtitle,
-                        statusText = if (errorLogs.isNotEmpty()) "${errorLogs.size} detected" else "Clean",
+                        title = s.errorLogTitle,
+                        subtitle = s.errorLogSubtitle,
+                        statusText = if (errorLogs.isNotEmpty()) s.statusDetected(errorLogs.size) else s.statusClean,
                         statusColor = if (errorLogs.isNotEmpty()) ObsidianColors.CrimsonAlert else ObsidianColors.DimSilver,
                         showDivider = true,
                         onClick = { activeSection = ControlsTab.ERROR_LOG }
                     )
 
                     ControlsMenuRowItem(
-                        title = ControlsTab.ACTIVITY_LOG.label,
-                        subtitle = ControlsTab.ACTIVITY_LOG.subtitle,
-                        statusText = if (isActivityPaused) "Paused" else "Live · ${activityLogs.size}",
+                        title = s.activityLogTitle,
+                        subtitle = s.activityLogSubtitle,
+                        statusText = if (isActivityPaused) s.statusPaused else s.statusLive(activityLogs.size),
                         statusColor = if (isActivityPaused) ObsidianColors.DimSilver else Color(0xFF68D391),
                         showDivider = false,
                         onClick = { activeSection = ControlsTab.ACTIVITY_LOG }
@@ -332,6 +344,8 @@ fun ControlsMenuSheet(
             ControlsTab.SETTINGS -> {
                 AlarmSettingsView(
                     telemetry = telemetry,
+                    currentLanguage = currentLanguage,
+                    onLanguageChange = onLanguageChange,
                     onSpeedLockThresholdChange = onSpeedLockThresholdChange,
                     onTpmsLowPsiChange = onTpmsLowPsiChange,
                     onTpmsHighPsiChange = onTpmsHighPsiChange,
@@ -418,6 +432,7 @@ private fun ErrorLogListView(
     onClear: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val s = appStrings()
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -428,7 +443,7 @@ private fun ErrorLogListView(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (entries.isEmpty()) "No OBD errors detected" else "${entries.size} detected · tap item for details",
+                text = if (entries.isEmpty()) s.noErrorsDetected else s.detectedTapDetails(entries.size),
                 color = ObsidianColors.DimSilver,
                 fontSize = 10.sp
             )
@@ -441,7 +456,7 @@ private fun ErrorLogListView(
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = "Clear",
+                        text = s.clear,
                         color = ObsidianColors.MutedSilver,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium
@@ -460,7 +475,7 @@ private fun ErrorLogListView(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "All OBD-II modules report no stored faults.",
+                    text = s.allModulesClean,
                     color = ObsidianColors.DimSilver,
                     fontSize = 11.sp
                 )
@@ -594,15 +609,16 @@ private fun ErrorLogDetailView(
                 )
             }
 
-            DetailMetaRow(label = "Timestamp", value = formatDateTimeFull(entry.timestampMs), mono = true)
-            DetailMetaRow(label = "ECU / Module", value = entry.subsystem)
-            DetailMetaRow(label = "Service / PID", value = entry.pid, mono = true)
-            DetailMetaRow(label = "Raw Frame", value = entry.rawFrame, mono = true)
-            DetailMetaRow(label = "Source", value = entry.source)
+            val s = appStrings()
+            DetailMetaRow(label = s.timestamp, value = formatDateTimeFull(entry.timestampMs), mono = true)
+            DetailMetaRow(label = s.ecuModule, value = entry.subsystem)
+            DetailMetaRow(label = s.servicePid, value = entry.pid, mono = true)
+            DetailMetaRow(label = s.rawFrame, value = entry.rawFrame, mono = true)
+            DetailMetaRow(label = s.source, value = entry.source)
 
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = "DESCRIPTION",
+                text = s.description,
                 color = ObsidianColors.DimSilver,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -617,7 +633,7 @@ private fun ErrorLogDetailView(
 
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = "RECOMMENDED ACTION",
+                text = s.recommendedAction,
                 color = ObsidianColors.DimSilver,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -642,6 +658,7 @@ private fun ActivityLogListView(
     onClear: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val s = appStrings()
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -662,7 +679,7 @@ private fun ActivityLogListView(
                         .background(if (isPaused) ObsidianColors.DimSilver else Color(0xFF38A169))
                 )
                 Text(
-                    text = if (isPaused) "Stream paused · tap item for details" else "Live OBD stream · tap item for details",
+                    text = if (isPaused) s.streamPausedTap else s.liveStreamTap,
                     color = ObsidianColors.DimSilver,
                     fontSize = 10.sp
                 )
@@ -677,7 +694,7 @@ private fun ActivityLogListView(
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = if (isPaused) "Resume" else "Pause",
+                        text = if (isPaused) s.resume else s.pause,
                         color = ObsidianColors.PureSilver,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium
@@ -692,7 +709,7 @@ private fun ActivityLogListView(
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = "Clear",
+                            text = s.clear,
                             color = ObsidianColors.MutedSilver,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Medium
@@ -712,7 +729,7 @@ private fun ActivityLogListView(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Waiting for OBD-II TX/RX frames...",
+                    text = s.waitingFrames,
                     color = ObsidianColors.DimSilver,
                     fontSize = 11.sp
                 )
@@ -848,8 +865,9 @@ private fun ActivityLogDetailView(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+                val s = appStrings()
                 Text(
-                    text = if (isTx) "TX · SENT TO ECU" else "RX · RECEIVED FROM ECU",
+                    text = if (isTx) s.txSentToEcu else s.rxReceivedFromEcu,
                     color = dirColor,
                     fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
@@ -857,16 +875,17 @@ private fun ActivityLogDetailView(
                 )
             }
 
-            DetailMetaRow(label = "Timestamp", value = formatDateTimeFull(entry.timestampMs), mono = true)
-            DetailMetaRow(label = "Quick Value", value = entry.quickValue)
-            DetailMetaRow(label = "ECU Header", value = entry.ecuHeader, mono = true)
-            DetailMetaRow(label = "Raw Frame", value = entry.rawFrame, mono = true)
-            DetailMetaRow(label = "Formula", value = entry.formula, mono = true)
-            DetailMetaRow(label = "Source", value = entry.source)
+            val sDetail = appStrings()
+            DetailMetaRow(label = sDetail.timestamp, value = formatDateTimeFull(entry.timestampMs), mono = true)
+            DetailMetaRow(label = sDetail.quickValue, value = entry.quickValue)
+            DetailMetaRow(label = sDetail.ecuHeader, value = entry.ecuHeader, mono = true)
+            DetailMetaRow(label = sDetail.rawFrame, value = entry.rawFrame, mono = true)
+            DetailMetaRow(label = sDetail.formula, value = entry.formula, mono = true)
+            DetailMetaRow(label = sDetail.source, value = entry.source)
 
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = "DECODED DATA",
+                text = sDetail.decodedData,
                 color = ObsidianColors.DimSilver,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -931,6 +950,8 @@ private fun formatDateTimeFull(timestampMs: Long): String {
 @Composable
 private fun AlarmSettingsView(
     telemetry: VehicleTelemetry,
+    currentLanguage: AppLanguage,
+    onLanguageChange: (AppLanguage) -> Unit,
     onSpeedLockThresholdChange: (Int) -> Unit,
     onTpmsLowPsiChange: (Float) -> Unit,
     onTpmsHighPsiChange: (Float) -> Unit,
@@ -941,6 +962,7 @@ private fun AlarmSettingsView(
     onResetToStandard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val s = appStrings()
     val sliderColors = SliderDefaults.colors(
         thumbColor = ObsidianColors.PureSilver,
         activeTrackColor = ObsidianColors.PureSilver,
@@ -953,6 +975,48 @@ private fun AlarmSettingsView(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        // 0. Language Selector (English / Indonesia)
+        SettingsGroupCard(title = s.languageSectionTitle) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = s.languageLabel,
+                    color = ObsidianColors.MutedSilver,
+                    fontSize = 10.5.sp
+                )
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF0E1015))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    AppLanguage.entries.forEach { lang ->
+                        val selected = lang == currentLanguage
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                                .clickable { onLanguageChange(lang) }
+                                .padding(horizontal = 12.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = lang.displayName,
+                                color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                                fontSize = 10.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Status & Reset Standard Button
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -961,9 +1025,9 @@ private fun AlarmSettingsView(
         ) {
             Text(
                 text = if (telemetry.isCustomAlertSettings) {
-                    "Custom alarm thresholds active"
+                    s.customThresholdsActive
                 } else {
-                    "Standard Kia Rio UB defaults active"
+                    s.standardDefaultsActive
                 },
                 color = if (telemetry.isCustomAlertSettings) Color(0xFF63B3ED) else ObsidianColors.DimSilver,
                 fontSize = 10.sp
@@ -976,7 +1040,7 @@ private fun AlarmSettingsView(
                     .padding(horizontal = 10.dp, vertical = 5.dp)
             ) {
                 Text(
-                    text = "Reset Standard",
+                    text = s.resetStandard,
                     color = if (telemetry.isCustomAlertSettings) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium
@@ -985,11 +1049,11 @@ private fun AlarmSettingsView(
         }
 
         // 1. Door Lock Speed Alarm
-        SettingsGroupCard(title = "DOOR LOCK SPEED ALARM") {
+        SettingsGroupCard(title = s.doorLockSection) {
             ThresholdSliderItem(
-                label = "Alert if doors unlocked above",
+                label = s.doorLockLabel,
                 valueText = "${telemetry.speedLockAlarmThresholdKmh} km/h",
-                standardText = "Std: ${VehicleTelemetry.DEFAULT_SPEED_LOCK_THRESHOLD_KMH} km/h",
+                standardText = "${s.stdPrefix}: ${VehicleTelemetry.DEFAULT_SPEED_LOCK_THRESHOLD_KMH} km/h",
                 value = telemetry.speedLockAlarmThresholdKmh.toFloat(),
                 valueRange = 10f..60f,
                 onValueChange = { onSpeedLockThresholdChange(it.toInt()) },
@@ -998,29 +1062,29 @@ private fun AlarmSettingsView(
         }
 
         // 2. Tire TPMS Alarm (PSI & Temperature)
-        SettingsGroupCard(title = "TIRE TPMS ALARM") {
+        SettingsGroupCard(title = s.tpmsSection) {
             ThresholdSliderItem(
-                label = "Minimum tire pressure (Low PSI)",
+                label = s.tpmsLowLabel,
                 valueText = "${String.format("%.1f", telemetry.tpmsLowThresholdPsi)} PSI",
-                standardText = "Std: ${String.format("%.1f", VehicleTelemetry.DEFAULT_TPMS_LOW_PSI)} PSI",
+                standardText = "${s.stdPrefix}: ${String.format("%.1f", VehicleTelemetry.DEFAULT_TPMS_LOW_PSI)} PSI",
                 value = telemetry.tpmsLowThresholdPsi,
                 valueRange = 18f..32f,
                 onValueChange = onTpmsLowPsiChange,
                 sliderColors = sliderColors
             )
             ThresholdSliderItem(
-                label = "Maximum tire pressure (High PSI)",
+                label = s.tpmsHighLabel,
                 valueText = "${String.format("%.1f", telemetry.tpmsHighThresholdPsi)} PSI",
-                standardText = "Std: ${String.format("%.1f", VehicleTelemetry.DEFAULT_TPMS_HIGH_PSI)} PSI",
+                standardText = "${s.stdPrefix}: ${String.format("%.1f", VehicleTelemetry.DEFAULT_TPMS_HIGH_PSI)} PSI",
                 value = telemetry.tpmsHighThresholdPsi,
                 valueRange = 34f..45f,
                 onValueChange = onTpmsHighPsiChange,
                 sliderColors = sliderColors
             )
             ThresholdSliderItem(
-                label = "Minimum tire temperature alarm",
+                label = s.tpmsTempLabel,
                 valueText = "${telemetry.tpmsHighTempC} °C",
-                standardText = "Std: ${VehicleTelemetry.DEFAULT_TPMS_HIGH_TEMP_C} °C",
+                standardText = "${s.stdPrefix}: ${VehicleTelemetry.DEFAULT_TPMS_HIGH_TEMP_C} °C",
                 value = telemetry.tpmsHighTempC.toFloat(),
                 valueRange = 35f..65f,
                 onValueChange = { onTpmsHighTempChange(it.toInt()) },
@@ -1029,11 +1093,11 @@ private fun AlarmSettingsView(
         }
 
         // 3. Engine Coolant Overheat Alarm
-        SettingsGroupCard(title = "ENGINE COOLANT ALARM") {
+        SettingsGroupCard(title = s.coolantSection) {
             ThresholdSliderItem(
-                label = "Minimum coolant temp for overheat alarm",
+                label = s.coolantLabel,
                 valueText = "${telemetry.coolantOverheatThresholdC} °C",
-                standardText = "Std: ${VehicleTelemetry.DEFAULT_COOLANT_OVERHEAT_C} °C",
+                standardText = "${s.stdPrefix}: ${VehicleTelemetry.DEFAULT_COOLANT_OVERHEAT_C} °C",
                 value = telemetry.coolantOverheatThresholdC.toFloat(),
                 valueRange = 92f..118f,
                 onValueChange = { onCoolantOverheatChange(it.toInt()) },
@@ -1042,20 +1106,20 @@ private fun AlarmSettingsView(
         }
 
         // 4. Battery Voltage Alarm
-        SettingsGroupCard(title = "BATTERY VOLTAGE ALARM") {
+        SettingsGroupCard(title = s.batterySection) {
             ThresholdSliderItem(
-                label = "Low voltage alarm (at or below)",
+                label = s.batteryLowLabel,
                 valueText = "${String.format("%.1f", telemetry.batteryLowThresholdV)} V",
-                standardText = "Std: ${String.format("%.1f", VehicleTelemetry.DEFAULT_BATTERY_LOW_V)} V",
+                standardText = "${s.stdPrefix}: ${String.format("%.1f", VehicleTelemetry.DEFAULT_BATTERY_LOW_V)} V",
                 value = telemetry.batteryLowThresholdV,
                 valueRange = 10.5f..12.6f,
                 onValueChange = onBatteryLowChange,
                 sliderColors = sliderColors
             )
             ThresholdSliderItem(
-                label = "High / overcharge alarm (at or above)",
+                label = s.batteryHighLabel,
                 valueText = "${String.format("%.1f", telemetry.batteryHighThresholdV)} V",
-                standardText = "Std: ${String.format("%.1f", VehicleTelemetry.DEFAULT_BATTERY_HIGH_V)} V",
+                standardText = "${s.stdPrefix}: ${String.format("%.1f", VehicleTelemetry.DEFAULT_BATTERY_HIGH_V)} V",
                 value = telemetry.batteryHighThresholdV,
                 valueRange = 14.4f..16.0f,
                 onValueChange = onBatteryHighChange,

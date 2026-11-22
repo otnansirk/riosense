@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.ui.i18n.appStrings
 import id.bangsadigital.riosense.ui.theme.ObsidianColors
 import kotlin.math.cos
 import kotlin.math.sin
@@ -172,6 +173,7 @@ fun LeftSpeedAndSecurityPanel(
         }
 
         // Borderless Door Lock Status Pill with inline closed/open padlock icon
+        val s = appStrings()
         val isAlarm = telemetry.isSpeedUnlockAlarm
         val lockBg = if (isAlarm) ObsidianColors.AlertSurface else Color(0xFF0E1014)
         val lockTint = when {
@@ -201,7 +203,7 @@ fun LeftSpeedAndSecurityPanel(
                         .offset(y = (-0.5).dp)
                 )
                 Text(
-                    text = if (telemetry.centralLocked) "Doors Locked" else "Doors Unlocked",
+                    text = if (telemetry.centralLocked) s.doorsLocked else s.doorsUnlocked,
                     color = if (isAlarm) ObsidianColors.CrimsonAlert else ObsidianColors.PureSilver,
                     style = TextStyle(
                         fontSize = 11.sp,
@@ -216,9 +218,9 @@ fun LeftSpeedAndSecurityPanel(
             }
             Text(
                 text = if (isAlarm) {
-                    "Speed > ${telemetry.speedLockAlarmThresholdKmh} km/h warning"
+                    s.speedLockWarning(telemetry.speedLockAlarmThresholdKmh)
                 } else {
-                    "Auto-alert at ${telemetry.speedLockAlarmThresholdKmh} km/h"
+                    s.autoAlertAt(telemetry.speedLockAlarmThresholdKmh)
                 },
                 color = ObsidianColors.DimSilver,
                 style = TextStyle(
@@ -361,13 +363,14 @@ fun RightEngineTelemetryPanel(
                 .padding(horizontal = 14.dp, vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            val s = appStrings()
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Coolant",
+                    text = s.coolant,
                     color = ObsidianColors.DimSilver,
                     fontSize = 10.sp
                 )
@@ -379,7 +382,7 @@ fun RightEngineTelemetryPanel(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Battery",
+                    text = s.battery,
                     color = ObsidianColors.DimSilver,
                     fontSize = 10.sp
                 )

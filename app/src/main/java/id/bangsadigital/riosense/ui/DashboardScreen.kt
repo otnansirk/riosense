@@ -44,6 +44,8 @@ import id.bangsadigital.riosense.ui.components.LeftSpeedAndSecurityPanel
 import id.bangsadigital.riosense.ui.components.MinimizedFloatingPillView
 import id.bangsadigital.riosense.ui.components.RightEngineTelemetryPanel
 import id.bangsadigital.riosense.ui.components.SimulatorAndSettingsSheet
+import id.bangsadigital.riosense.ui.i18n.LocalAppLanguage
+import id.bangsadigital.riosense.ui.i18n.appStrings
 import id.bangsadigital.riosense.ui.theme.ObsidianColors
 
 /**
@@ -195,6 +197,8 @@ fun RioSenseDashboardScreen(
                 ControlsMenuSheet(
                     telemetry = telemetry,
                     maintenance = maintenance,
+                    currentLanguage = LocalAppLanguage.current,
+                    onLanguageChange = { lang -> repository.setAppLanguage(lang) },
                     initialTab = controlsInitialTab,
                     errorLogs = errorLogs,
                     activityLogs = activityLogs,
@@ -246,6 +250,7 @@ private fun TopObsidianBar(
     onOpenControls: () -> Unit,
     onMinimize: () -> Unit
 ) {
+    val s = appStrings()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -283,7 +288,7 @@ private fun TopObsidianBar(
                             .background(Color(0xFF63B3ED))
                     )
                     Text(
-                        text = "Simulator",
+                        text = s.simulator,
                         color = ObsidianColors.PureSilver,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
@@ -301,7 +306,7 @@ private fun TopObsidianBar(
                             .background(if (telemetry.obdConnected) Color(0xFF38A169) else Color(0xFF646C7E))
                     )
                     Text(
-                        text = if (telemetry.obdConnected) "OBD Connected" else "OBD Standby",
+                        text = if (telemetry.obdConnected) s.obdConnected else s.obdStandby,
                         color = ObsidianColors.DimSilver,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Normal
@@ -347,7 +352,7 @@ private fun TopObsidianBar(
                     .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
                 Text(
-                    text = if (telemetry.audioAlarmMuted) "Muted" else "Chime",
+                    text = if (telemetry.audioAlarmMuted) s.muted else s.chime,
                     color = if (telemetry.audioAlarmMuted) ObsidianColors.DimSilver else ObsidianColors.MutedSilver,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium
@@ -372,7 +377,7 @@ private fun TopObsidianBar(
                     )
                 }
                 Text(
-                    text = "Controls",
+                    text = s.controls,
                     color = ObsidianColors.PureSilver,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium
@@ -387,7 +392,7 @@ private fun TopObsidianBar(
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Text(
-                    text = "Minimize",
+                    text = s.minimize,
                     color = ObsidianColors.MutedSilver,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium
@@ -404,6 +409,7 @@ private fun BottomAlertBanner(
     onAcknowledgeOrFix: () -> Unit,
     onOpenServiceReminders: () -> Unit
 ) {
+    val s = appStrings()
     val alerts = telemetry.activeAlerts
     val hasAlert = alerts.isNotEmpty()
     val nowMs = System.currentTimeMillis()
@@ -462,10 +468,10 @@ private fun BottomAlertBanner(
                         val summary = dueServices.take(2).joinToString("  ·  ") { item ->
                             "${item.name} (${item.quickSummary(nowMs, maintenance.currentOdometerKm)})"
                         }
-                        val extra = if (dueServices.size > 2) " +${dueServices.size - 2} more" else ""
-                        "SERVICE REMINDER: $summary$extra"
+                        val extra = if (dueServices.size > 2) s.moreSuffix(dueServices.size - 2) else ""
+                        "${s.serviceReminderPrefix}: $summary$extra"
                     }
-                    else -> "Kia Rio UB 2015  ·  ${telemetry.paintColor.displayName}  ·  All systems nominal"
+                    else -> "Kia Rio UB 2015  ·  ${telemetry.paintColor.displayName}  ·  ${s.allSystemsNominal}"
                 },
                 color = if (hasAlert || hasServiceReminder) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
                 fontSize = 11.sp,
@@ -485,7 +491,7 @@ private fun BottomAlertBanner(
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text = "Dismiss",
+                    text = s.dismiss,
                     color = ObsidianColors.PureSilver,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium
@@ -501,7 +507,7 @@ private fun BottomAlertBanner(
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text = "Service",
+                    text = s.serviceBtn,
                     color = Color(0xFFE6A23C),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium

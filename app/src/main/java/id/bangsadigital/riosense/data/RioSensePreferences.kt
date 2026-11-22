@@ -7,6 +7,7 @@ import id.bangsadigital.riosense.model.MaintenanceItem
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.ServiceRecord
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.ui.i18n.AppLanguage
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -30,6 +31,7 @@ class RioSensePreferences(context: Context) {
 
         private const val KEY_PAINT_COLOR = "paint_color"
         private const val KEY_AUDIO_MUTED = "audio_alarm_muted"
+        private const val KEY_APP_LANGUAGE = "app_language"
 
         private const val KEY_ODOMETER_KM = "maintenance_odometer_km"
         private const val KEY_REMIND_DAYS = "maintenance_remind_days"
@@ -92,6 +94,16 @@ class RioSensePreferences(context: Context) {
             .putFloat(KEY_BATTERY_LOW_V, telemetry.batteryLowThresholdV)
             .putFloat(KEY_BATTERY_HIGH_V, telemetry.batteryHighThresholdV)
             .apply()
+    }
+
+    fun loadAppLanguage(): AppLanguage {
+        val saved = prefs.getString(KEY_APP_LANGUAGE, AppLanguage.EN.name)
+        return runCatching { AppLanguage.valueOf(saved ?: AppLanguage.EN.name) }
+            .getOrDefault(AppLanguage.EN)
+    }
+
+    fun saveAppLanguage(language: AppLanguage) {
+        prefs.edit().putString(KEY_APP_LANGUAGE, language.name).apply()
     }
 
     fun loadMaintenanceState(): MaintenanceState {

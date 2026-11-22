@@ -14,6 +14,7 @@ import id.bangsadigital.riosense.model.ObdErrorSeverity
 import id.bangsadigital.riosense.model.TireInfo
 import id.bangsadigital.riosense.model.TpmsState
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.ui.i18n.AppLanguage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -65,6 +66,16 @@ class VehicleRepository(context: Context? = null) {
         )
     )
     val maintenance: StateFlow<MaintenanceState> = _maintenance.asStateFlow()
+
+    private val _appLanguage = MutableStateFlow(
+        prefs?.loadAppLanguage() ?: AppLanguage.EN
+    )
+    val appLanguage: StateFlow<AppLanguage> = _appLanguage.asStateFlow()
+
+    fun setAppLanguage(language: AppLanguage) {
+        _appLanguage.value = language
+        prefs?.saveAppLanguage(language)
+    }
 
     private val _errorLogs = MutableStateFlow<List<ObdErrorEntry>>(emptyList())
     val errorLogs: StateFlow<List<ObdErrorEntry>> = _errorLogs.asStateFlow()

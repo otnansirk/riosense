@@ -67,6 +67,7 @@ import id.bangsadigital.riosense.model.KiaRioPaintColor
 import id.bangsadigital.riosense.model.LightState
 import id.bangsadigital.riosense.model.TireInfo
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.ui.i18n.appStrings
 import id.bangsadigital.riosense.ui.theme.ObsidianColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -757,8 +758,16 @@ private fun CarViewSelectionBar(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                 }
+                val s = appStrings()
+                val localizedLabel = when (mode) {
+                    CarViewMode.AUTO_ROTATE -> s.viewAuto360
+                    CarViewMode.FRONT -> s.viewFront
+                    CarViewMode.FRONT_45 -> s.viewFront45
+                    CarViewMode.BACK -> s.viewBack
+                    CarViewMode.BACK_45 -> s.viewBack45
+                }
                 Text(
-                    text = mode.label,
+                    text = localizedLabel,
                     color = if (isSelected) ObsidianColors.PureSilver else ObsidianColors.MutedSilver,
                     fontSize = 9.5.sp,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,

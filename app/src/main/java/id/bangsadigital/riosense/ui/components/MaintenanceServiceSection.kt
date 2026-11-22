@@ -48,6 +48,7 @@ import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.MaintenanceStatus
 import id.bangsadigital.riosense.model.ServiceRecord
 import id.bangsadigital.riosense.model.formatIdr
+import id.bangsadigital.riosense.ui.i18n.appStrings
 import id.bangsadigital.riosense.ui.theme.ObsidianColors
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -144,6 +145,7 @@ private fun MaintenanceListView(
     onResetStandard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val s = appStrings()
     val nowMs = System.currentTimeMillis()
     var editingOdometer by remember { mutableStateOf(false) }
     var odometerInput by remember(maintenance.currentOdometerKm) {
@@ -208,11 +210,11 @@ private fun MaintenanceListView(
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
-                        CompactChipButton(label = "Save", highlighted = true) {
+                        CompactChipButton(label = s.save, highlighted = true) {
                             odometerInput.toIntOrNull()?.let { onUpdateOdometer(it) }
                             editingOdometer = false
                         }
-                        CompactChipButton(label = "Cancel") {
+                        CompactChipButton(label = s.cancel) {
                             odometerInput = maintenance.currentOdometerKm.toString()
                             editingOdometer = false
                         }
@@ -234,12 +236,12 @@ private fun MaintenanceListView(
                             fontWeight = FontWeight.SemiBold,
                             fontFamily = FontFamily.Monospace
                         )
-                        Text("Edit", color = Color(0xFF63B3ED), fontSize = 9.5.sp, fontWeight = FontWeight.Medium)
+                        Text(s.edit, color = Color(0xFF63B3ED), fontSize = 9.5.sp, fontWeight = FontWeight.Medium)
                     }
 
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = "TOTAL SPENT",
+                            text = s.totalSpent,
                             color = ObsidianColors.DimSilver,
                             fontSize = 8.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -266,7 +268,7 @@ private fun MaintenanceListView(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = "Remind:",
+                        text = s.remind,
                         color = ObsidianColors.DimSilver,
                         fontSize = 9.5.sp
                     )
@@ -287,8 +289,8 @@ private fun MaintenanceListView(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    CompactChipButton(label = "+ Add", highlighted = true, onClick = onOpenAddForm)
-                    CompactChipButton(label = "Reset", onClick = onResetStandard)
+                    CompactChipButton(label = s.addBtn, highlighted = true, onClick = onOpenAddForm)
+                    CompactChipButton(label = s.resetBtn, onClick = onResetStandard)
                 }
             }
         }
@@ -382,6 +384,7 @@ private fun MaintenanceItemDetailView(
     onDelete: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
+    val s = appStrings()
     val nowMs = System.currentTimeMillis()
     val status = item.evaluateStatus(
         nowMs = nowMs,
@@ -433,15 +436,15 @@ private fun MaintenanceItemDetailView(
                 fontSize = 10.5.sp
             )
 
-            ServiceMetaRow("Last Service", "${formatDateOnly(item.lastServiceDateMs)} · ${String.format("%,d", item.lastServiceOdometerKm)} km")
+            ServiceMetaRow(s.lastService, "${formatDateOnly(item.lastServiceDateMs)} · ${String.format("%,d", item.lastServiceOdometerKm)} km")
             ServiceMetaRow(
-                "Next Due",
+                s.nextDue,
                 buildString {
                     append(item.nextDueDateMs()?.let { formatDateOnly(it) } ?: "-")
                     item.nextDueOdometerKm()?.let { append(" · ${String.format("%,d", it)} km") }
                 }
             )
-            ServiceMetaRow("Part Total Spent", formatIdr(item.totalCostIdr))
+            ServiceMetaRow(s.partTotalSpent, formatIdr(item.totalCostIdr))
 
             Spacer(modifier = Modifier.height(3.dp))
 
@@ -455,7 +458,7 @@ private fun MaintenanceItemDetailView(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "+ Record Service (Today or Past Date)",
+                    text = s.recordServiceBtn,
                     color = Color(0xFF68D391),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
@@ -473,7 +476,7 @@ private fun MaintenanceItemDetailView(
             verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             Text(
-                text = "SERVICE HISTORY (${item.history.size})",
+                text = s.serviceHistoryTitle(item.history.size),
                 color = ObsidianColors.DimSilver,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -482,7 +485,7 @@ private fun MaintenanceItemDetailView(
 
             if (item.history.isEmpty()) {
                 Text(
-                    text = "No service records logged yet.",
+                    text = s.noServiceRecords,
                     color = ObsidianColors.DimSilver,
                     fontSize = 10.5.sp
                 )
@@ -507,7 +510,7 @@ private fun MaintenanceItemDetailView(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = "REMINDER INTERVAL",
+                text = s.reminderIntervalTitle,
                 color = ObsidianColors.DimSilver,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -519,9 +522,9 @@ private fun MaintenanceItemDetailView(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Time", color = ObsidianColors.MutedSilver, fontSize = 10.sp)
+                Text(s.timeLabel, color = ObsidianColors.MutedSilver, fontSize = 10.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf(0 to "Off", 6 to "6m", 12 to "12m", 24 to "24m", 48 to "48m").forEach { (months, label) ->
+                    listOf(0 to s.offLabel, 6 to "6m", 12 to "12m", 24 to "24m", 48 to "48m").forEach { (months, label) ->
                         CompactChipButton(
                             label = label,
                             highlighted = item.intervalMonths == months,
@@ -536,9 +539,9 @@ private fun MaintenanceItemDetailView(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Distance", color = ObsidianColors.MutedSilver, fontSize = 10.sp)
+                Text(s.distanceLabel, color = ObsidianColors.MutedSilver, fontSize = 10.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf(0 to "Off", 5000 to "5k", 10000 to "10k", 20000 to "20k", 40000 to "40k").forEach { (km, label) ->
+                    listOf(0 to s.offLabel, 5000 to "5k", 10000 to "10k", 20000 to "20k", 40000 to "40k").forEach { (km, label) ->
                         CompactChipButton(
                             label = label,
                             highlighted = item.intervalKm == km,
@@ -560,7 +563,7 @@ private fun MaintenanceItemDetailView(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Delete Custom Part",
+                        text = s.deleteCustomPart,
                         color = ObsidianColors.CrimsonAlert,
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.Medium
@@ -640,6 +643,7 @@ private fun RecordServiceForm(
     onSave: (dateMs: Long, odoKm: Int, costIdr: Long, note: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val s = appStrings()
     val context = LocalContext.current
     var selectedDateMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var odoText by remember { mutableStateOf(currentOdometerKm.toString()) }
@@ -695,10 +699,10 @@ private fun RecordServiceForm(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Service Date", color = ObsidianColors.MutedSilver, fontSize = 10.sp)
+                    Text(s.serviceDate, color = ObsidianColors.MutedSilver, fontSize = 10.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        CompactChipButton("Today") { selectedDateMs = System.currentTimeMillis() }
-                        CompactChipButton("Yesterday") {
+                        CompactChipButton(s.today) { selectedDateMs = System.currentTimeMillis() }
+                        CompactChipButton(s.yesterday) {
                             selectedDateMs = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(1)
                         }
                     }
@@ -721,7 +725,7 @@ private fun RecordServiceForm(
                         fontFamily = FontFamily.Monospace
                     )
                     Text(
-                        text = "Pick Date",
+                        text = s.pickDate,
                         color = Color(0xFF63B3ED),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium
@@ -731,7 +735,7 @@ private fun RecordServiceForm(
 
             // Odometer Input
             FormInputField(
-                label = "Odometer at Service (km)",
+                label = s.odometerAtService,
                 value = odoText,
                 placeholder = currentOdometerKm.toString(),
                 keyboardType = KeyboardType.Number,
@@ -741,7 +745,7 @@ private fun RecordServiceForm(
             // Optional Cost Input (IDR)
             val parsedCost = costText.toLongOrNull() ?: 0L
             FormInputField(
-                label = if (parsedCost > 0L) "Total Cost (Optional · ${formatIdr(parsedCost)})" else "Total Cost in Rp (Optional)",
+                label = if (parsedCost > 0L) s.totalCostWithPreview(formatIdr(parsedCost)) else s.totalCostOptional,
                 value = costText,
                 placeholder = "e.g. 550000",
                 keyboardType = KeyboardType.Number,
@@ -750,7 +754,7 @@ private fun RecordServiceForm(
 
             // Optional Multiline Notes
             FormInputField(
-                label = "Notes (Optional)",
+                label = s.notesOptional,
                 value = noteText,
                 placeholder = "e.g.\n- Shell Helix HX7 10W-40\n- OEM Oil Filter",
                 keyboardType = KeyboardType.Text,
@@ -772,7 +776,7 @@ private fun RecordServiceForm(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Save Service Record",
+                    text = s.saveServiceRecord,
                     color = if (canSave) Color(0xFF68D391) else ObsidianColors.DimSilver,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
@@ -788,6 +792,7 @@ private fun AddCustomMaintenanceForm(
     onSave: (name: String, months: Int, km: Int, dateMs: Long, odoKm: Int, costIdr: Long, note: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val s = appStrings()
     val context = LocalContext.current
     var partName by remember { mutableStateOf("") }
     var intervalMonths by remember { mutableIntStateOf(12) }
@@ -833,7 +838,7 @@ private fun AddCustomMaintenanceForm(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             FormInputField(
-                label = "Part / Service Name",
+                label = s.partNameLabel,
                 value = partName,
                 placeholder = "e.g. Wiper Blades, Fan Belt, Brake Fluid",
                 keyboardType = KeyboardType.Text,
@@ -842,7 +847,7 @@ private fun AddCustomMaintenanceForm(
 
             // Date picker
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Last Service Date", color = ObsidianColors.MutedSilver, fontSize = 10.sp)
+                Text(s.lastServiceDate, color = ObsidianColors.MutedSilver, fontSize = 10.sp)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -859,12 +864,12 @@ private fun AddCustomMaintenanceForm(
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
                     )
-                    Text("Pick Date", color = Color(0xFF63B3ED), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                    Text(s.pickDate, color = Color(0xFF63B3ED), fontSize = 10.sp, fontWeight = FontWeight.Medium)
                 }
             }
 
             FormInputField(
-                label = "Odometer at Service (km)",
+                label = s.odometerAtService,
                 value = odoText,
                 placeholder = currentOdometerKm.toString(),
                 keyboardType = KeyboardType.Number,
@@ -873,7 +878,7 @@ private fun AddCustomMaintenanceForm(
 
             val parsedCost = costText.toLongOrNull() ?: 0L
             FormInputField(
-                label = if (parsedCost > 0L) "Cost (Optional · ${formatIdr(parsedCost)})" else "Cost in Rp (Optional)",
+                label = if (parsedCost > 0L) s.costWithPreview(formatIdr(parsedCost)) else s.costOptional,
                 value = costText,
                 placeholder = "e.g. 250000",
                 keyboardType = KeyboardType.Number,
@@ -881,7 +886,7 @@ private fun AddCustomMaintenanceForm(
             )
 
             FormInputField(
-                label = "Notes (Optional)",
+                label = s.notesOptional,
                 value = noteText,
                 placeholder = "e.g.\n- Bosch Advantage 24/16 inch\n- Rear wiper blade",
                 keyboardType = KeyboardType.Text,
@@ -894,9 +899,9 @@ private fun AddCustomMaintenanceForm(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Time interval", color = ObsidianColors.MutedSilver, fontSize = 10.sp)
+                Text(s.timeLabel, color = ObsidianColors.MutedSilver, fontSize = 10.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf(0 to "Off", 6 to "6m", 12 to "12m", 24 to "24m").forEach { (m, label) ->
+                    listOf(0 to s.offLabel, 6 to "6m", 12 to "12m", 24 to "24m").forEach { (m, label) ->
                         CompactChipButton(label = label, highlighted = intervalMonths == m) {
                             intervalMonths = m
                         }
@@ -909,9 +914,9 @@ private fun AddCustomMaintenanceForm(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Distance", color = ObsidianColors.MutedSilver, fontSize = 10.sp)
+                Text(s.distanceLabel, color = ObsidianColors.MutedSilver, fontSize = 10.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf(0 to "Off", 5000 to "5k", 10000 to "10k", 20000 to "20k", 40000 to "40k").forEach { (k, label) ->
+                    listOf(0 to s.offLabel, 5000 to "5k", 10000 to "10k", 20000 to "20k", 40000 to "40k").forEach { (k, label) ->
                         CompactChipButton(label = label, highlighted = intervalKm == k) {
                             intervalKm = k
                         }
@@ -940,7 +945,7 @@ private fun AddCustomMaintenanceForm(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Save Maintenance Part",
+                    text = s.saveMaintenancePart,
                     color = if (canSave) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold

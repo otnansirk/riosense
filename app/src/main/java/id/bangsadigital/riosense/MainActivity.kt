@@ -9,6 +9,7 @@ import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -18,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import id.bangsadigital.riosense.data.VehicleRepository
 import id.bangsadigital.riosense.ui.RioSenseDashboardScreen
+import id.bangsadigital.riosense.ui.i18n.LocalAppLanguage
 import id.bangsadigital.riosense.ui.theme.RioSenseObsidianTheme
 import kotlinx.coroutines.delay
 
@@ -36,6 +38,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val telemetry by vehicleRepository.telemetry.collectAsState()
+            val appLanguage by vehicleRepository.appLanguage.collectAsState()
 
             // Preload authentic Kia Rio alarm chime once in SoundPool (~13 KB mono asset, <5ms latency)
             var alarmLoaded by remember { mutableStateOf(false) }
@@ -90,12 +93,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            RioSenseObsidianTheme {
-                RioSenseDashboardScreen(
-                    telemetry = telemetry,
-                    repository = vehicleRepository,
-                    onEnterPipMode = { enterFloatingPipWindow() }
-                )
+            CompositionLocalProvider(LocalAppLanguage provides appLanguage) {
+                RioSenseObsidianTheme {
+                    RioSenseDashboardScreen(
+                        telemetry = telemetry,
+                        repository = vehicleRepository,
+                        onEnterPipMode = { enterFloatingPipWindow() }
+                    )
+                }
             }
         }
     }
