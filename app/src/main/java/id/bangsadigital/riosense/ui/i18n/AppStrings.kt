@@ -97,6 +97,9 @@ data class AppStrings(
     // Settings
     val languageSectionTitle: String,
     val languageLabel: String,
+    val voiceReminderSectionTitle: String,
+    val voiceReminderLabel: String,
+    val onLabel: String,
     val customThresholdsActive: String,
     val standardDefaultsActive: String,
     val resetStandard: String,
@@ -235,6 +238,9 @@ private val EnglishStrings = AppStrings(
 
     languageSectionTitle = "LANGUAGE",
     languageLabel = "Display language",
+    voiceReminderSectionTitle = "ENGINE-OFF VOICE REMINDER",
+    voiceReminderLabel = "Remind windows & ajar doors on ignition off",
+    onLabel = "On",
     customThresholdsActive = "Custom alarm thresholds active",
     standardDefaultsActive = "Standard Kia Rio UB defaults active",
     resetStandard = "Reset Standard",
@@ -366,6 +372,9 @@ private val IndonesianStrings = AppStrings(
 
     languageSectionTitle = "BAHASA",
     languageLabel = "Bahasa tampilan",
+    voiceReminderSectionTitle = "PENGINGAT SUARA MESIN MATI",
+    voiceReminderLabel = "Ingatkan tutup kaca & cek pintu saat kontak OFF",
+    onLabel = "Aktif",
     customThresholdsActive = "Batas alarm custom aktif",
     standardDefaultsActive = "Setelan standar Kia Rio UB aktif",
     resetStandard = "Reset Standar",

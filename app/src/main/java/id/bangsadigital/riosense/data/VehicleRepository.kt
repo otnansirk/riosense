@@ -86,6 +86,9 @@ class VehicleRepository(context: Context? = null) {
     private val _activityLogPaused = MutableStateFlow(false)
     val activityLogPaused: StateFlow<Boolean> = _activityLogPaused.asStateFlow()
 
+    private val _engineOffEventTick = MutableStateFlow(0L)
+    val engineOffEventTick: StateFlow<Long> = _engineOffEventTick.asStateFlow()
+
     init {
         seedInitialObdLogs()
     }
@@ -509,6 +512,11 @@ class VehicleRepository(context: Context? = null) {
         val next = _telemetry.value
         val now = System.currentTimeMillis()
         val src = currentSourceLabel(next)
+
+        // Detect live Engine-OFF transition (running >= 500 RPM -> 0 RPM at 0 km/h)
+        if (prev.rpm >= 500 && clampedRpm == 0 && clampedSpeed == 0) {
+            _engineOffEventTick.value = now
+        }
         recordActivity(
             ObdActivityEntry(
                 id = idSeq.getAndIncrement(),
@@ -818,6 +826,44 @@ class VehicleRepository(context: Context? = null) {
     fun toggleAudioMute() {
         _telemetry.update { it.copy(audioAlarmMuted = !it.audioAlarmMuted) }
         persistTelemetrySettings()
+    }
+
+    fun setEngineOffVoiceReminderEnabled(enabled: Boolean) {
+        _telemetry.update { it.copy(engineOffVoiceReminderEnabled = enabled) }
+        persistTelemetrySettings()
+    }
+
+    /**
+     * Simulates turning the Kia Rio ignition/engine OFF (RPM -> 0, Speed -> 0, Battery -> 12.4V)
+     * and fires the Engine-OFF Voice Reminder event immediately for testing.
+     */
+    fun simulateEngineOff() {
+        val now = System.currentTimeMillis()
+        _telemetry.update {
+            it.copy(
+                speedKmh = 0,
+                rpm = 0,
+                gear = "N",
+                batteryVoltage = 12.4f
+            )
+        }
+        val next = _telemetry.value
+        recordActivity(
+            ObdActivityEntry(
+                id = idSeq.getAndIncrement(),
+                timestampMs = now,
+                direction = ObdDirection.RX,
+                pid = "010C",
+                parameterName = "Engine RPM (Ignition OFF)",
+                quickValue = "0 RPM · 12.4 V",
+                ecuHeader = "7E8 (ECM)",
+                rawFrame = "7E8 04 41 0C 00 00",
+                decodedDetail = "Engine stopped (0 RPM, 0 km/h, 12.4V). Triggering Engine-OFF voice safety reminder.",
+                formula = "((A * 256) + B) / 4",
+                source = currentSourceLabel(next)
+            )
+        )
+        _engineOffEventTick.value = now
     }
 
     fun setSpeedLockThreshold(kmh: Int) {

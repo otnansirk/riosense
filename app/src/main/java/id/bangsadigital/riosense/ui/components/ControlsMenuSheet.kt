@@ -66,6 +66,7 @@ fun ControlsMenuSheet(
     maintenance: MaintenanceState,
     currentLanguage: AppLanguage,
     onLanguageChange: (AppLanguage) -> Unit,
+    onEngineOffVoiceReminderChange: (Boolean) -> Unit,
     initialTab: ControlsTab? = null,
     errorLogs: List<ObdErrorEntry>,
     activityLogs: List<ObdActivityEntry>,
@@ -346,6 +347,7 @@ fun ControlsMenuSheet(
                     telemetry = telemetry,
                     currentLanguage = currentLanguage,
                     onLanguageChange = onLanguageChange,
+                    onEngineOffVoiceReminderChange = onEngineOffVoiceReminderChange,
                     onSpeedLockThresholdChange = onSpeedLockThresholdChange,
                     onTpmsLowPsiChange = onTpmsLowPsiChange,
                     onTpmsHighPsiChange = onTpmsHighPsiChange,
@@ -952,6 +954,7 @@ private fun AlarmSettingsView(
     telemetry: VehicleTelemetry,
     currentLanguage: AppLanguage,
     onLanguageChange: (AppLanguage) -> Unit,
+    onEngineOffVoiceReminderChange: (Boolean) -> Unit,
     onSpeedLockThresholdChange: (Int) -> Unit,
     onTpmsLowPsiChange: (Float) -> Unit,
     onTpmsHighPsiChange: (Float) -> Unit,
@@ -1007,6 +1010,51 @@ private fun AlarmSettingsView(
                         ) {
                             Text(
                                 text = lang.displayName,
+                                color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                                fontSize = 10.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 0b. Engine-OFF Voice Reminder Toggle (TTS)
+        SettingsGroupCard(title = s.voiceReminderSectionTitle) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = s.voiceReminderLabel,
+                    color = ObsidianColors.MutedSilver,
+                    fontSize = 10.5.sp,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF0E1015))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf(true to s.onLabel, false to s.offLabel).forEach { (enabled, label) ->
+                        val selected = telemetry.engineOffVoiceReminderEnabled == enabled
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                                .clickable { onEngineOffVoiceReminderChange(enabled) }
+                                .padding(horizontal = 12.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = label,
                                 color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
                                 fontSize = 10.sp,
                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium

@@ -31,6 +31,7 @@ class RioSensePreferences(context: Context) {
 
         private const val KEY_PAINT_COLOR = "paint_color"
         private const val KEY_AUDIO_MUTED = "audio_alarm_muted"
+        private const val KEY_ENGINE_OFF_VOICE_REMINDER = "engine_off_voice_reminder_enabled"
         private const val KEY_APP_LANGUAGE = "app_language"
 
         private const val KEY_ODOMETER_KM = "maintenance_odometer_km"
@@ -51,6 +52,10 @@ class RioSensePreferences(context: Context) {
         return base.copy(
             paintColor = paintColor,
             audioAlarmMuted = prefs.getBoolean(KEY_AUDIO_MUTED, base.audioAlarmMuted),
+            engineOffVoiceReminderEnabled = prefs.getBoolean(
+                KEY_ENGINE_OFF_VOICE_REMINDER,
+                base.engineOffVoiceReminderEnabled
+            ),
             speedLockAlarmThresholdKmh = prefs.getInt(
                 KEY_SPEED_LOCK_KMH,
                 VehicleTelemetry.DEFAULT_SPEED_LOCK_THRESHOLD_KMH
@@ -86,6 +91,7 @@ class RioSensePreferences(context: Context) {
         prefs.edit()
             .putString(KEY_PAINT_COLOR, telemetry.paintColor.name)
             .putBoolean(KEY_AUDIO_MUTED, telemetry.audioAlarmMuted)
+            .putBoolean(KEY_ENGINE_OFF_VOICE_REMINDER, telemetry.engineOffVoiceReminderEnabled)
             .putInt(KEY_SPEED_LOCK_KMH, telemetry.speedLockAlarmThresholdKmh)
             .putFloat(KEY_TPMS_LOW_PSI, telemetry.tpmsLowThresholdPsi)
             .putFloat(KEY_TPMS_HIGH_PSI, telemetry.tpmsHighThresholdPsi)

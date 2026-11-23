@@ -45,6 +45,7 @@ fun SimulatorAndSettingsSheet(
     onBatteryVoltageChange: (Float) -> Unit,
     onApplyNormalPreset: () -> Unit,
     onApplyAlertPreset: () -> Unit,
+    onSimulateEngineOff: () -> Unit,
     onInjectDtc: (String) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
@@ -131,6 +132,25 @@ fun SimulatorAndSettingsSheet(
                     fontWeight = FontWeight.Medium
                 )
             }
+        }
+
+        // Simulate Ignition / Engine OFF to test bilingual TTS Voice Reminder
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF151E28))
+                .border(0.7.dp, Color(0xFF63B3ED).copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                .clickable { onSimulateEngineOff() }
+                .padding(vertical = 9.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Simulate Engine OFF (Test Voice Reminder)",
+                color = Color(0xFF63B3ED),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
 
         // 1. Exterior Paint Finish

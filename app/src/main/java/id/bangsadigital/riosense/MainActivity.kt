@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import id.bangsadigital.riosense.audio.VoiceReminderEngine
 import id.bangsadigital.riosense.data.VehicleRepository
 import id.bangsadigital.riosense.ui.RioSenseDashboardScreen
 import id.bangsadigital.riosense.ui.i18n.LocalAppLanguage
@@ -39,6 +40,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             val telemetry by vehicleRepository.telemetry.collectAsState()
             val appLanguage by vehicleRepository.appLanguage.collectAsState()
+            val engineOffTick by vehicleRepository.engineOffEventTick.collectAsState()
+
+            val voiceReminderEngine = remember { VoiceReminderEngine(applicationContext) }
 
             // Preload authentic Kia Rio alarm chime once in SoundPool (~13 KB mono asset, <5ms latency)
             var alarmLoaded by remember { mutableStateOf(false) }
@@ -61,6 +65,14 @@ class MainActivity : ComponentActivity() {
             DisposableEffect(Unit) {
                 onDispose {
                     alarmEngine.first.release()
+                    voiceReminderEngine.shutdown()
+                }
+            }
+
+            // Speak bilingual Engine-OFF safety reminder (ajar doors + closed windows check)
+            LaunchedEffect(engineOffTick) {
+                if (engineOffTick > 0L && telemetry.engineOffVoiceReminderEnabled && !telemetry.audioAlarmMuted) {
+                    voiceReminderEngine.speakEngineOffReminder(telemetry.doors, appLanguage)
                 }
             }
 

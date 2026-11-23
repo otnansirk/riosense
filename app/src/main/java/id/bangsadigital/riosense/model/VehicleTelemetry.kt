@@ -119,7 +119,8 @@ data class VehicleTelemetry(
     val obdConnected: Boolean = false,
     val simulatorMode: Boolean = true,
     val isMinimized: Boolean = false,
-    val audioAlarmMuted: Boolean = false
+    val audioAlarmMuted: Boolean = false,
+    val engineOffVoiceReminderEnabled: Boolean = true
 ) {
     companion object {
         const val DEFAULT_SPEED_LOCK_THRESHOLD_KMH = 20
