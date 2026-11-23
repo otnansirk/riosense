@@ -14,6 +14,7 @@ import id.bangsadigital.riosense.model.ObdErrorSeverity
 import id.bangsadigital.riosense.model.TireInfo
 import id.bangsadigital.riosense.model.TpmsState
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.model.WelcomeSoundMode
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -88,6 +89,9 @@ class VehicleRepository(context: Context? = null) {
 
     private val _engineOffEventTick = MutableStateFlow(0L)
     val engineOffEventTick: StateFlow<Long> = _engineOffEventTick.asStateFlow()
+
+    private val _engineStartEventTick = MutableStateFlow(0L)
+    val engineStartEventTick: StateFlow<Long> = _engineStartEventTick.asStateFlow()
 
     init {
         seedInitialObdLogs()
@@ -517,6 +521,10 @@ class VehicleRepository(context: Context? = null) {
         if (prev.rpm >= 500 && clampedRpm == 0 && clampedSpeed == 0) {
             _engineOffEventTick.value = now
         }
+        // Detect live Engine-START transition (stopped 0 RPM -> running >= 500 RPM)
+        if (prev.rpm == 0 && clampedRpm >= 500) {
+            _engineStartEventTick.value = now
+        }
         recordActivity(
             ObdActivityEntry(
                 id = idSeq.getAndIncrement(),
@@ -831,6 +839,44 @@ class VehicleRepository(context: Context? = null) {
     fun setEngineOffVoiceReminderEnabled(enabled: Boolean) {
         _telemetry.update { it.copy(engineOffVoiceReminderEnabled = enabled) }
         persistTelemetrySettings()
+    }
+
+    fun setWelcomeSoundMode(mode: WelcomeSoundMode) {
+        _telemetry.update { it.copy(welcomeSoundMode = mode) }
+        persistTelemetrySettings()
+    }
+
+    /**
+     * Simulates starting the Kia Rio engine (RPM -> 820, Speed -> 0, Battery -> 14.2V)
+     * and triggers the time-of-day Welcome Greeting sound.
+     */
+    fun simulateEngineStart() {
+        val now = System.currentTimeMillis()
+        _telemetry.update {
+            it.copy(
+                speedKmh = 0,
+                rpm = 820,
+                gear = "N",
+                batteryVoltage = 14.2f
+            )
+        }
+        val next = _telemetry.value
+        recordActivity(
+            ObdActivityEntry(
+                id = idSeq.getAndIncrement(),
+                timestampMs = now,
+                direction = ObdDirection.RX,
+                pid = "010C",
+                parameterName = "Engine RPM (Ignition START)",
+                quickValue = "820 RPM · 14.2 V",
+                ecuHeader = "7E8 (ECM)",
+                rawFrame = formatRpmFrame(820),
+                decodedDetail = "Engine started (820 RPM idle, 14.2V charging). Triggering Welcome Greeting (${next.welcomeSoundMode.name}).",
+                formula = "((A * 256) + B) / 4",
+                source = currentSourceLabel(next)
+            )
+        )
+        _engineStartEventTick.value = now
     }
 
     /**

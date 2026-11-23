@@ -45,6 +45,7 @@ fun SimulatorAndSettingsSheet(
     onBatteryVoltageChange: (Float) -> Unit,
     onApplyNormalPreset: () -> Unit,
     onApplyAlertPreset: () -> Unit,
+    onSimulateEngineStart: () -> Unit,
     onSimulateEngineOff: () -> Unit,
     onInjectDtc: (String) -> Unit,
     onClose: () -> Unit,
@@ -134,23 +135,46 @@ fun SimulatorAndSettingsSheet(
             }
         }
 
-        // Simulate Ignition / Engine OFF to test bilingual TTS Voice Reminder
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF151E28))
-                .border(0.7.dp, Color(0xFF63B3ED).copy(alpha = 0.45f), RoundedCornerShape(8.dp))
-                .clickable { onSimulateEngineOff() }
-                .padding(vertical = 9.dp),
-            contentAlignment = Alignment.Center
+        // Simulate Ignition START & Engine OFF to test Welcome Greeting & Voice Reminder
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = "Simulate Engine OFF (Test Voice Reminder)",
-                color = Color(0xFF63B3ED),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF15241D))
+                    .border(0.7.dp, Color(0xFF68D391).copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                    .clickable { onSimulateEngineStart() }
+                    .padding(vertical = 9.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Simulate Engine START",
+                    color = Color(0xFF68D391),
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF151E28))
+                    .border(0.7.dp, Color(0xFF63B3ED).copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                    .clickable { onSimulateEngineOff() }
+                    .padding(vertical = 9.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Simulate Engine OFF",
+                    color = Color(0xFF63B3ED),
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
 
         // 1. Exterior Paint Finish

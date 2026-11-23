@@ -46,6 +46,7 @@ import id.bangsadigital.riosense.model.ObdDirection
 import id.bangsadigital.riosense.model.ObdErrorEntry
 import id.bangsadigital.riosense.model.ObdErrorSeverity
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.model.WelcomeSoundMode
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
 import id.bangsadigital.riosense.ui.i18n.appStrings
 import id.bangsadigital.riosense.ui.theme.ObsidianColors
@@ -66,6 +67,7 @@ fun ControlsMenuSheet(
     maintenance: MaintenanceState,
     currentLanguage: AppLanguage,
     onLanguageChange: (AppLanguage) -> Unit,
+    onWelcomeSoundModeChange: (WelcomeSoundMode) -> Unit,
     onEngineOffVoiceReminderChange: (Boolean) -> Unit,
     initialTab: ControlsTab? = null,
     errorLogs: List<ObdErrorEntry>,
@@ -347,6 +349,7 @@ fun ControlsMenuSheet(
                     telemetry = telemetry,
                     currentLanguage = currentLanguage,
                     onLanguageChange = onLanguageChange,
+                    onWelcomeSoundModeChange = onWelcomeSoundModeChange,
                     onEngineOffVoiceReminderChange = onEngineOffVoiceReminderChange,
                     onSpeedLockThresholdChange = onSpeedLockThresholdChange,
                     onTpmsLowPsiChange = onTpmsLowPsiChange,
@@ -954,6 +957,7 @@ private fun AlarmSettingsView(
     telemetry: VehicleTelemetry,
     currentLanguage: AppLanguage,
     onLanguageChange: (AppLanguage) -> Unit,
+    onWelcomeSoundModeChange: (WelcomeSoundMode) -> Unit,
     onEngineOffVoiceReminderChange: (Boolean) -> Unit,
     onSpeedLockThresholdChange: (Int) -> Unit,
     onTpmsLowPsiChange: (Float) -> Unit,
@@ -1010,6 +1014,55 @@ private fun AlarmSettingsView(
                         ) {
                             Text(
                                 text = lang.displayName,
+                                color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                                fontSize = 10.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 0a. Welcome Sound on Engine Start (Off | Chime | Voice)
+        SettingsGroupCard(title = s.welcomeSoundSectionTitle) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = s.welcomeSoundLabel,
+                    color = ObsidianColors.MutedSilver,
+                    fontSize = 10.5.sp,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF0E1015))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf(
+                        WelcomeSoundMode.OFF to s.offLabel,
+                        WelcomeSoundMode.CHIME to s.chimeModeLabel,
+                        WelcomeSoundMode.VOICE to s.voiceModeLabel
+                    ).forEach { (mode, label) ->
+                        val selected = telemetry.welcomeSoundMode == mode
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                                .clickable { onWelcomeSoundModeChange(mode) }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = label,
                                 color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
                                 fontSize = 10.sp,
                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium

@@ -6,7 +6,9 @@ import android.media.MediaPlayer
 import androidx.annotation.RawRes
 import id.bangsadigital.riosense.R
 import id.bangsadigital.riosense.model.DoorState
+import id.bangsadigital.riosense.model.WelcomeSoundMode
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
+import java.util.Calendar
 
 /**
  * Offline Neural AI Voice reminder player for Kia Rio UB Engine-OFF safety announcements.
@@ -25,6 +27,18 @@ class VoiceReminderEngine(private val context: Context) {
     fun speakEngineOffReminder(doors: DoorState, language: AppLanguage) {
         val voiceResId = selectClipResId(doors, language)
         playRawClip(R.raw.voice_chime_intro, nextResId = voiceResId)
+    }
+
+    fun playWelcomeGreeting(mode: WelcomeSoundMode, language: AppLanguage) {
+        when (mode) {
+            WelcomeSoundMode.OFF -> Unit
+            WelcomeSoundMode.CHIME -> playRawClip(R.raw.welcome_startup_chime)
+            WelcomeSoundMode.VOICE -> {
+                val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+                val greetingResId = selectWelcomeClipResId(hour, language)
+                playRawClip(R.raw.welcome_startup_chime, nextResId = greetingResId)
+            }
+        }
     }
 
     private fun playRawClip(@RawRes resId: Int, @RawRes nextResId: Int? = null) {
@@ -71,6 +85,24 @@ class VoiceReminderEngine(private val context: Context) {
     }
 
     companion object {
+        @RawRes
+        fun selectWelcomeClipResId(hourOfDay: Int, language: AppLanguage): Int {
+            return when (language) {
+                AppLanguage.ID -> when (hourOfDay) {
+                    in 5..10 -> R.raw.welcome_id_morning
+                    in 11..14 -> R.raw.welcome_id_afternoon
+                    in 15..17 -> R.raw.welcome_id_evening
+                    else -> R.raw.welcome_id_night
+                }
+                AppLanguage.EN -> when (hourOfDay) {
+                    in 5..10 -> R.raw.welcome_en_morning
+                    in 11..14 -> R.raw.welcome_en_afternoon
+                    in 15..17 -> R.raw.welcome_en_evening
+                    else -> R.raw.welcome_en_night
+                }
+            }
+        }
+
         @RawRes
         fun selectClipResId(doors: DoorState, language: AppLanguage): Int {
             val openKeys = buildList {

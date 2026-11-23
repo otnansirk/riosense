@@ -7,6 +7,7 @@ import id.bangsadigital.riosense.model.MaintenanceItem
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.ServiceRecord
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.model.WelcomeSoundMode
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
 import org.json.JSONArray
 import org.json.JSONObject
@@ -32,6 +33,7 @@ class RioSensePreferences(context: Context) {
         private const val KEY_PAINT_COLOR = "paint_color"
         private const val KEY_AUDIO_MUTED = "audio_alarm_muted"
         private const val KEY_ENGINE_OFF_VOICE_REMINDER = "engine_off_voice_reminder_enabled"
+        private const val KEY_WELCOME_SOUND_MODE = "welcome_sound_mode"
         private const val KEY_APP_LANGUAGE = "app_language"
 
         private const val KEY_ODOMETER_KM = "maintenance_odometer_km"
@@ -49,6 +51,11 @@ class RioSensePreferences(context: Context) {
             KiaRioPaintColor.valueOf(paintName ?: base.paintColor.name)
         }.getOrDefault(base.paintColor)
 
+        val welcomeModeName = prefs.getString(KEY_WELCOME_SOUND_MODE, base.welcomeSoundMode.name)
+        val welcomeMode = runCatching {
+            WelcomeSoundMode.valueOf(welcomeModeName ?: base.welcomeSoundMode.name)
+        }.getOrDefault(base.welcomeSoundMode)
+
         return base.copy(
             paintColor = paintColor,
             audioAlarmMuted = prefs.getBoolean(KEY_AUDIO_MUTED, base.audioAlarmMuted),
@@ -56,6 +63,7 @@ class RioSensePreferences(context: Context) {
                 KEY_ENGINE_OFF_VOICE_REMINDER,
                 base.engineOffVoiceReminderEnabled
             ),
+            welcomeSoundMode = welcomeMode,
             speedLockAlarmThresholdKmh = prefs.getInt(
                 KEY_SPEED_LOCK_KMH,
                 VehicleTelemetry.DEFAULT_SPEED_LOCK_THRESHOLD_KMH
@@ -92,6 +100,7 @@ class RioSensePreferences(context: Context) {
             .putString(KEY_PAINT_COLOR, telemetry.paintColor.name)
             .putBoolean(KEY_AUDIO_MUTED, telemetry.audioAlarmMuted)
             .putBoolean(KEY_ENGINE_OFF_VOICE_REMINDER, telemetry.engineOffVoiceReminderEnabled)
+            .putString(KEY_WELCOME_SOUND_MODE, telemetry.welcomeSoundMode.name)
             .putInt(KEY_SPEED_LOCK_KMH, telemetry.speedLockAlarmThresholdKmh)
             .putFloat(KEY_TPMS_LOW_PSI, telemetry.tpmsLowThresholdPsi)
             .putFloat(KEY_TPMS_HIGH_PSI, telemetry.tpmsHighThresholdPsi)

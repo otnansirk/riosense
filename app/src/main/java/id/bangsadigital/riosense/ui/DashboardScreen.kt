@@ -178,6 +178,7 @@ fun RioSenseDashboardScreen(
                     onBatteryVoltageChange = { volts -> repository.setBatteryVoltage(volts) },
                     onApplyNormalPreset = { repository.applyNormalPreset() },
                     onApplyAlertPreset = { repository.applyAlertShowcasePreset() },
+                    onSimulateEngineStart = { repository.simulateEngineStart() },
                     onSimulateEngineOff = { repository.simulateEngineOff() },
                     onInjectDtc = { code -> repository.injectSimulatedDtc(code) },
                     onClose = { showSimulatorDrawer = false },
@@ -200,6 +201,9 @@ fun RioSenseDashboardScreen(
                     maintenance = maintenance,
                     currentLanguage = LocalAppLanguage.current,
                     onLanguageChange = { lang -> repository.setAppLanguage(lang) },
+                    onWelcomeSoundModeChange = { mode ->
+                        repository.setWelcomeSoundMode(mode)
+                    },
                     onEngineOffVoiceReminderChange = { enabled ->
                         repository.setEngineOffVoiceReminderEnabled(enabled)
                     },

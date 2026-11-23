@@ -97,6 +97,10 @@ data class AppStrings(
     // Settings
     val languageSectionTitle: String,
     val languageLabel: String,
+    val welcomeSoundSectionTitle: String,
+    val welcomeSoundLabel: String,
+    val chimeModeLabel: String,
+    val voiceModeLabel: String,
     val voiceReminderSectionTitle: String,
     val voiceReminderLabel: String,
     val onLabel: String,
@@ -238,6 +242,10 @@ private val EnglishStrings = AppStrings(
 
     languageSectionTitle = "LANGUAGE",
     languageLabel = "Display language",
+    welcomeSoundSectionTitle = "WELCOME SOUND (ENGINE START)",
+    welcomeSoundLabel = "Greeting on ignition / engine start",
+    chimeModeLabel = "Chime",
+    voiceModeLabel = "Voice",
     voiceReminderSectionTitle = "ENGINE-OFF VOICE REMINDER",
     voiceReminderLabel = "Remind windows & ajar doors on ignition off",
     onLabel = "On",
@@ -372,6 +380,10 @@ private val IndonesianStrings = AppStrings(
 
     languageSectionTitle = "BAHASA",
     languageLabel = "Bahasa tampilan",
+    welcomeSoundSectionTitle = "SUARA SAMBUTAN (STARTER MOBIL)",
+    welcomeSoundLabel = "Sapaan otomatis saat mesin dinyalakan",
+    chimeModeLabel = "Chime",
+    voiceModeLabel = "Suara",
     voiceReminderSectionTitle = "PENGINGAT SUARA MESIN MATI",
     voiceReminderLabel = "Ingatkan tutup kaca & cek pintu saat kontak OFF",
     onLabel = "Aktif",

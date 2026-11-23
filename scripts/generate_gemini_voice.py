@@ -64,6 +64,26 @@ CLIPS = [
      "Hey, wait a second! The tailgate is still open. Please close it and check all your windows!"),
     ("voice_en_doors_multi", EN_STYLE,
      "Hey, wait a second! Multiple doors are still ajar. Please check your doors and all windows before leaving!"),
+
+    # Time-of-day Welcome Greetings (Indonesian)
+    ("welcome_id_morning", ID_STYLE,
+     "Selamat pagi! Kia Rio siap menemani hari ini. Hati-hati di jalan ya!"),
+    ("welcome_id_afternoon", ID_STYLE,
+     "Selamat siang! Kia Rio siap jalan. Tetap fokus dan hati-hati ya!"),
+    ("welcome_id_evening", ID_STYLE,
+     "Selamat sore! Kia Rio siap jalan. Hati-hati di perjalanan ya!"),
+    ("welcome_id_night", ID_STYLE,
+     "Selamat malam! Kia Rio siap jalan. Jangan lupa cek lampu dan hati-hati di jalan ya!"),
+
+    # Time-of-day Welcome Greetings (English)
+    ("welcome_en_morning", EN_STYLE,
+     "Good morning! Your Kia Rio is ready for the day. Drive safe!"),
+    ("welcome_en_afternoon", EN_STYLE,
+     "Good afternoon! Your Kia Rio is ready to go. Stay focused and drive safe!"),
+    ("welcome_en_evening", EN_STYLE,
+     "Good evening! Your Kia Rio is ready. Have a smooth and safe drive!"),
+    ("welcome_en_night", EN_STYLE,
+     "Good evening! Your Kia Rio is ready. Don't forget your headlights and drive safe!"),
 ]
 
 

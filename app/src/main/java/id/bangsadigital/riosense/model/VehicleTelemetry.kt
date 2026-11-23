@@ -98,6 +98,12 @@ data class TpmsState(
         }
 }
 
+enum class WelcomeSoundMode {
+    OFF,
+    CHIME,
+    VOICE
+}
+
 data class VehicleTelemetry(
     val speedKmh: Int = 0,
     val rpm: Int = 780,
@@ -120,7 +126,8 @@ data class VehicleTelemetry(
     val simulatorMode: Boolean = true,
     val isMinimized: Boolean = false,
     val audioAlarmMuted: Boolean = false,
-    val engineOffVoiceReminderEnabled: Boolean = true
+    val engineOffVoiceReminderEnabled: Boolean = true,
+    val welcomeSoundMode: WelcomeSoundMode = WelcomeSoundMode.VOICE
 ) {
     companion object {
         const val DEFAULT_SPEED_LOCK_THRESHOLD_KMH = 20

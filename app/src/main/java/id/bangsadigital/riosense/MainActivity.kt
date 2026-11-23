@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
             val telemetry by vehicleRepository.telemetry.collectAsState()
             val appLanguage by vehicleRepository.appLanguage.collectAsState()
             val engineOffTick by vehicleRepository.engineOffEventTick.collectAsState()
+            val engineStartTick by vehicleRepository.engineStartEventTick.collectAsState()
 
             val voiceReminderEngine = remember { VoiceReminderEngine(applicationContext) }
 
@@ -73,6 +74,13 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(engineOffTick) {
                 if (engineOffTick > 0L && telemetry.engineOffVoiceReminderEnabled && !telemetry.audioAlarmMuted) {
                     voiceReminderEngine.speakEngineOffReminder(telemetry.doors, appLanguage)
+                }
+            }
+
+            // Play time-of-day Welcome Greeting (Off / Chime / Voice) when engine starts
+            LaunchedEffect(engineStartTick) {
+                if (engineStartTick > 0L && !telemetry.audioAlarmMuted) {
+                    voiceReminderEngine.playWelcomeGreeting(telemetry.welcomeSoundMode, appLanguage)
                 }
             }
 
