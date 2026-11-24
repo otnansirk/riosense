@@ -886,6 +886,11 @@ class VehicleRepository(context: Context? = null) {
         persistTelemetrySettings()
     }
 
+    fun setTopBarBrandLogo(logo: id.bangsadigital.riosense.model.TopBarBrandLogo) {
+        _telemetry.update { it.copy(topBarBrandLogo = logo) }
+        persistTelemetrySettings()
+    }
+
     fun loadSampleTrips() {
         val samples = TripSampleSeeder.defaultShowcaseTrips()
         _tripHistory.value = samples

@@ -10,6 +10,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -53,17 +54,21 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import id.bangsadigital.riosense.R
 import id.bangsadigital.riosense.VoiceDashboardNavigation
 import id.bangsadigital.riosense.data.VehicleRepository
 import id.bangsadigital.riosense.model.KiaRioPaintColor
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.MaintenanceStatus
+import id.bangsadigital.riosense.model.TopBarBrandLogo
 import id.bangsadigital.riosense.model.VehicleTelemetry
 import id.bangsadigital.riosense.model.VoiceButtonStyle
 import kotlin.math.PI
@@ -296,6 +301,9 @@ fun RioSenseDashboardScreen(
                     onTripRecordingEnabledChange = { enabled ->
                         repository.setTripRecordingEnabled(enabled)
                     },
+                    onTopBarBrandLogoChange = { logo ->
+                        repository.setTopBarBrandLogo(logo)
+                    },
                     initialTab = controlsInitialTab,
                     tripHistory = tripHistory,
                     activeTrip = activeTrip,
@@ -369,13 +377,29 @@ private fun TopObsidianBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = "RioSense",
-                color = ObsidianColors.PureSilver,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.5.sp
-            )
+            when (telemetry.topBarBrandLogo) {
+                TopBarBrandLogo.RIOSENSE -> Text(
+                    text = "RioSense",
+                    color = ObsidianColors.PureSilver,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.5.sp
+                )
+
+                TopBarBrandLogo.KIA_CLASSIC -> Image(
+                    painter = painterResource(id = R.drawable.ic_kia_classic),
+                    contentDescription = "Kia",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.height(21.dp)
+                )
+
+                TopBarBrandLogo.KIA_MODERN -> Image(
+                    painter = painterResource(id = R.drawable.ic_kia_modern),
+                    contentDescription = "Kia",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.height(14.dp)
+                )
+            }
 
             if (showSimulatorEntry) {
                 Row(

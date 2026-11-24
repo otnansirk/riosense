@@ -6,6 +6,7 @@ import id.bangsadigital.riosense.model.KiaRioPaintColor
 import id.bangsadigital.riosense.model.MaintenanceItem
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.ServiceRecord
+import id.bangsadigital.riosense.model.TopBarBrandLogo
 import id.bangsadigital.riosense.model.TripRecord
 import id.bangsadigital.riosense.model.TripRoutePoint
 import id.bangsadigital.riosense.model.TripSampleSeeder
@@ -43,6 +44,7 @@ class RioSensePreferences(context: Context) {
         private const val KEY_VOICE_STT_MODE = "voice_stt_mode"
         private const val KEY_VOICE_BUTTON_STYLE = "voice_button_style"
         private const val KEY_TRIP_RECORDING_ENABLED = "trip_recording_enabled"
+        private const val KEY_TOP_BAR_BRAND_LOGO = "top_bar_brand_logo"
         private const val KEY_TRIP_SEEDED_V2 = "trip_showcase_seeded_v2"
         private const val KEY_APP_LANGUAGE = "app_language"
 
@@ -79,6 +81,11 @@ class RioSensePreferences(context: Context) {
             VoiceButtonStyle.valueOf(btnStyleName ?: base.voiceButtonStyle.name)
         }.getOrDefault(base.voiceButtonStyle)
 
+        val brandLogoName = prefs.getString(KEY_TOP_BAR_BRAND_LOGO, base.topBarBrandLogo.name)
+        val brandLogo = runCatching {
+            TopBarBrandLogo.valueOf(brandLogoName ?: base.topBarBrandLogo.name)
+        }.getOrDefault(base.topBarBrandLogo)
+
         return base.copy(
             paintColor = paintColor,
             audioAlarmMuted = prefs.getBoolean(KEY_AUDIO_MUTED, base.audioAlarmMuted),
@@ -93,6 +100,7 @@ class RioSensePreferences(context: Context) {
                 KEY_TRIP_RECORDING_ENABLED,
                 base.tripRecordingEnabled
             ),
+            topBarBrandLogo = brandLogo,
             speedLockAlarmThresholdKmh = prefs.getInt(
                 KEY_SPEED_LOCK_KMH,
                 VehicleTelemetry.DEFAULT_SPEED_LOCK_THRESHOLD_KMH
@@ -133,6 +141,7 @@ class RioSensePreferences(context: Context) {
             .putString(KEY_VOICE_STT_MODE, telemetry.voiceSttMode.name)
             .putString(KEY_VOICE_BUTTON_STYLE, telemetry.voiceButtonStyle.name)
             .putBoolean(KEY_TRIP_RECORDING_ENABLED, telemetry.tripRecordingEnabled)
+            .putString(KEY_TOP_BAR_BRAND_LOGO, telemetry.topBarBrandLogo.name)
             .putInt(KEY_SPEED_LOCK_KMH, telemetry.speedLockAlarmThresholdKmh)
             .putFloat(KEY_TPMS_LOW_PSI, telemetry.tpmsLowThresholdPsi)
             .putFloat(KEY_TPMS_HIGH_PSI, telemetry.tpmsHighThresholdPsi)

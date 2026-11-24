@@ -114,6 +114,12 @@ enum class VoiceButtonStyle {
     FLOATING
 }
 
+enum class TopBarBrandLogo {
+    RIOSENSE,
+    KIA_CLASSIC,
+    KIA_MODERN
+}
+
 data class VehicleTelemetry(
     val speedKmh: Int = 0,
     val rpm: Int = 780,
@@ -140,7 +146,8 @@ data class VehicleTelemetry(
     val welcomeSoundMode: WelcomeSoundMode = WelcomeSoundMode.VOICE,
     val voiceSttMode: VoiceSttMode = VoiceSttMode.OFFLINE,
     val voiceButtonStyle: VoiceButtonStyle = VoiceButtonStyle.TOP_BAR,
-    val tripRecordingEnabled: Boolean = true
+    val tripRecordingEnabled: Boolean = true,
+    val topBarBrandLogo: TopBarBrandLogo = TopBarBrandLogo.RIOSENSE
 ) {
     companion object {
         const val DEFAULT_SPEED_LOCK_THRESHOLD_KMH = 20

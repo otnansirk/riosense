@@ -12,6 +12,7 @@ import android.speech.RecognitionSupportCallback
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -50,12 +51,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import id.bangsadigital.riosense.R
 import id.bangsadigital.riosense.model.ActiveTripState
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.MaintenanceStatus
@@ -63,6 +67,7 @@ import id.bangsadigital.riosense.model.ObdActivityEntry
 import id.bangsadigital.riosense.model.ObdDirection
 import id.bangsadigital.riosense.model.ObdErrorEntry
 import id.bangsadigital.riosense.model.ObdErrorSeverity
+import id.bangsadigital.riosense.model.TopBarBrandLogo
 import id.bangsadigital.riosense.model.TripRecord
 import id.bangsadigital.riosense.model.VehicleTelemetry
 import id.bangsadigital.riosense.model.VoiceButtonStyle
@@ -92,6 +97,7 @@ fun ControlsMenuSheet(
     onEngineOffVoiceReminderChange: (Boolean) -> Unit,
     onVoiceButtonStyleChange: (VoiceButtonStyle) -> Unit,
     onTripRecordingEnabledChange: (Boolean) -> Unit,
+    onTopBarBrandLogoChange: (TopBarBrandLogo) -> Unit,
     initialTab: ControlsTab? = null,
     tripHistory: List<TripRecord>,
     activeTrip: ActiveTripState?,
@@ -424,6 +430,7 @@ fun ControlsMenuSheet(
                     onEngineOffVoiceReminderChange = onEngineOffVoiceReminderChange,
                     onVoiceButtonStyleChange = onVoiceButtonStyleChange,
                     onTripRecordingEnabledChange = onTripRecordingEnabledChange,
+                    onTopBarBrandLogoChange = onTopBarBrandLogoChange,
                     onSpeedLockThresholdChange = onSpeedLockThresholdChange,
                     onTpmsLowPsiChange = onTpmsLowPsiChange,
                     onTpmsHighPsiChange = onTpmsHighPsiChange,
@@ -1293,6 +1300,7 @@ private fun AlarmSettingsView(
     onEngineOffVoiceReminderChange: (Boolean) -> Unit,
     onVoiceButtonStyleChange: (VoiceButtonStyle) -> Unit,
     onTripRecordingEnabledChange: (Boolean) -> Unit,
+    onTopBarBrandLogoChange: (TopBarBrandLogo) -> Unit,
     onSpeedLockThresholdChange: (Int) -> Unit,
     onTpmsLowPsiChange: (Float) -> Unit,
     onTpmsHighPsiChange: (Float) -> Unit,
@@ -1558,6 +1566,71 @@ private fun AlarmSettingsView(
                             fontSize = 10.sp,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
                         )
+                    }
+                }
+            }
+        }
+        SettingsHairlineDivider()
+
+        // 6. Top Bar Brand Logo Selector (flat row: RioSense | Kia Classic | Kia Modern)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = s.brandLogoLabel,
+                color = ObsidianColors.PureSilver,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f),
+                maxLines = 2
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF0E1015))
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TopBarBrandLogo.entries.forEach { logo ->
+                    val selected = telemetry.topBarBrandLogo == logo
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                            .clickable { onTopBarBrandLogoChange(logo) }
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when (logo) {
+                            TopBarBrandLogo.RIOSENSE -> Text(
+                                text = "RioSense",
+                                color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                                fontSize = 10.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                            )
+
+                            TopBarBrandLogo.KIA_CLASSIC -> Image(
+                                painter = painterResource(id = R.drawable.ic_kia_classic),
+                                contentDescription = "Kia Classic",
+                                contentScale = ContentScale.Fit,
+                                alpha = if (selected) 1f else 0.55f,
+                                modifier = Modifier.height(14.dp)
+                            )
+
+                            TopBarBrandLogo.KIA_MODERN -> Image(
+                                painter = painterResource(id = R.drawable.ic_kia_modern),
+                                contentDescription = "Kia Modern",
+                                contentScale = ContentScale.Fit,
+                                alpha = if (selected) 1f else 0.55f,
+                                modifier = Modifier.height(10.dp)
+                            )
+                        }
                     }
                 }
             }
