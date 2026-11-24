@@ -14,6 +14,7 @@ import id.bangsadigital.riosense.model.ObdErrorSeverity
 import id.bangsadigital.riosense.model.TireInfo
 import id.bangsadigital.riosense.model.TpmsState
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.model.VoiceButtonStyle
 import id.bangsadigital.riosense.model.VoiceSttMode
 import id.bangsadigital.riosense.model.WelcomeSoundMode
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
@@ -849,6 +850,11 @@ class VehicleRepository(context: Context? = null) {
 
     fun setVoiceSttMode(mode: VoiceSttMode) {
         _telemetry.update { it.copy(voiceSttMode = mode) }
+        persistTelemetrySettings()
+    }
+
+    fun setVoiceButtonStyle(style: VoiceButtonStyle) {
+        _telemetry.update { it.copy(voiceButtonStyle = style) }
         persistTelemetrySettings()
     }
 

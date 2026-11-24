@@ -7,6 +7,7 @@ import id.bangsadigital.riosense.model.MaintenanceItem
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.ServiceRecord
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.model.VoiceButtonStyle
 import id.bangsadigital.riosense.model.VoiceSttMode
 import id.bangsadigital.riosense.model.WelcomeSoundMode
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
@@ -36,6 +37,7 @@ class RioSensePreferences(context: Context) {
         private const val KEY_ENGINE_OFF_VOICE_REMINDER = "engine_off_voice_reminder_enabled"
         private const val KEY_WELCOME_SOUND_MODE = "welcome_sound_mode"
         private const val KEY_VOICE_STT_MODE = "voice_stt_mode"
+        private const val KEY_VOICE_BUTTON_STYLE = "voice_button_style"
         private const val KEY_APP_LANGUAGE = "app_language"
 
         private const val KEY_ODOMETER_KM = "maintenance_odometer_km"
@@ -63,6 +65,11 @@ class RioSensePreferences(context: Context) {
             VoiceSttMode.valueOf(sttModeName ?: base.voiceSttMode.name)
         }.getOrDefault(base.voiceSttMode)
 
+        val btnStyleName = prefs.getString(KEY_VOICE_BUTTON_STYLE, base.voiceButtonStyle.name)
+        val btnStyle = runCatching {
+            VoiceButtonStyle.valueOf(btnStyleName ?: base.voiceButtonStyle.name)
+        }.getOrDefault(base.voiceButtonStyle)
+
         return base.copy(
             paintColor = paintColor,
             audioAlarmMuted = prefs.getBoolean(KEY_AUDIO_MUTED, base.audioAlarmMuted),
@@ -72,6 +79,7 @@ class RioSensePreferences(context: Context) {
             ),
             welcomeSoundMode = welcomeMode,
             voiceSttMode = sttMode,
+            voiceButtonStyle = btnStyle,
             speedLockAlarmThresholdKmh = prefs.getInt(
                 KEY_SPEED_LOCK_KMH,
                 VehicleTelemetry.DEFAULT_SPEED_LOCK_THRESHOLD_KMH
@@ -110,6 +118,7 @@ class RioSensePreferences(context: Context) {
             .putBoolean(KEY_ENGINE_OFF_VOICE_REMINDER, telemetry.engineOffVoiceReminderEnabled)
             .putString(KEY_WELCOME_SOUND_MODE, telemetry.welcomeSoundMode.name)
             .putString(KEY_VOICE_STT_MODE, telemetry.voiceSttMode.name)
+            .putString(KEY_VOICE_BUTTON_STYLE, telemetry.voiceButtonStyle.name)
             .putInt(KEY_SPEED_LOCK_KMH, telemetry.speedLockAlarmThresholdKmh)
             .putFloat(KEY_TPMS_LOW_PSI, telemetry.tpmsLowThresholdPsi)
             .putFloat(KEY_TPMS_HIGH_PSI, telemetry.tpmsHighThresholdPsi)

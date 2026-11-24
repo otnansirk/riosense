@@ -62,6 +62,7 @@ import id.bangsadigital.riosense.model.ObdDirection
 import id.bangsadigital.riosense.model.ObdErrorEntry
 import id.bangsadigital.riosense.model.ObdErrorSeverity
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.model.VoiceButtonStyle
 import id.bangsadigital.riosense.model.WelcomeSoundMode
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
 import id.bangsadigital.riosense.ui.i18n.appStrings
@@ -85,6 +86,7 @@ fun ControlsMenuSheet(
     onLanguageChange: (AppLanguage) -> Unit,
     onWelcomeSoundModeChange: (WelcomeSoundMode) -> Unit,
     onEngineOffVoiceReminderChange: (Boolean) -> Unit,
+    onVoiceButtonStyleChange: (VoiceButtonStyle) -> Unit,
     initialTab: ControlsTab? = null,
     errorLogs: List<ObdErrorEntry>,
     activityLogs: List<ObdActivityEntry>,
@@ -367,6 +369,7 @@ fun ControlsMenuSheet(
                     onLanguageChange = onLanguageChange,
                     onWelcomeSoundModeChange = onWelcomeSoundModeChange,
                     onEngineOffVoiceReminderChange = onEngineOffVoiceReminderChange,
+                    onVoiceButtonStyleChange = onVoiceButtonStyleChange,
                     onSpeedLockThresholdChange = onSpeedLockThresholdChange,
                     onTpmsLowPsiChange = onTpmsLowPsiChange,
                     onTpmsHighPsiChange = onTpmsHighPsiChange,
@@ -1210,6 +1213,7 @@ private fun AlarmSettingsView(
     onLanguageChange: (AppLanguage) -> Unit,
     onWelcomeSoundModeChange: (WelcomeSoundMode) -> Unit,
     onEngineOffVoiceReminderChange: (Boolean) -> Unit,
+    onVoiceButtonStyleChange: (VoiceButtonStyle) -> Unit,
     onSpeedLockThresholdChange: (Int) -> Unit,
     onTpmsLowPsiChange: (Float) -> Unit,
     onTpmsHighPsiChange: (Float) -> Unit,
@@ -1388,7 +1392,55 @@ private fun AlarmSettingsView(
         }
         SettingsHairlineDivider()
 
-        // 4. Voice Command Offline Pack (flat row: inline status left + Download / Delete pill right)
+        // 4. Voice Button Style (flat row: Top Bar [default] | Floating AssistiveTouch Glass)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = s.voiceButtonStyleLabel,
+                color = ObsidianColors.PureSilver,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f),
+                maxLines = 2
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF0E1015))
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf(
+                    VoiceButtonStyle.TOP_BAR to s.voiceButtonTopBar,
+                    VoiceButtonStyle.FLOATING to s.voiceButtonFloating
+                ).forEach { (style, label) ->
+                    val selected = telemetry.voiceButtonStyle == style
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                            .clickable { onVoiceButtonStyleChange(style) }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = label,
+                            color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                            fontSize = 10.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+        SettingsHairlineDivider()
+
+        // 5. Voice Command Offline Pack (flat row: inline status left + Download / Delete pill right)
         Row(
             modifier = Modifier
                 .fillMaxWidth()

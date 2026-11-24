@@ -1,11 +1,16 @@
 package id.bangsadigital.riosense.ui
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -32,11 +39,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import id.bangsadigital.riosense.VoiceDashboardNavigation
@@ -45,6 +56,8 @@ import id.bangsadigital.riosense.model.KiaRioPaintColor
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.MaintenanceStatus
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.model.VoiceButtonStyle
+import kotlin.math.roundToInt
 import id.bangsadigital.riosense.ui.components.ControlsMenuSheet
 import id.bangsadigital.riosense.ui.components.ControlsTab
 import id.bangsadigital.riosense.ui.components.KiaRioInteractiveStage
@@ -199,6 +212,14 @@ fun RioSenseDashboardScreen(
             )
         }
 
+        // 3c. OPTIONAL ASSISTIVETOUCH-STYLE FLOATING GLASS MIC BUTTON (Draggable with Edge Snap)
+        if (telemetry.voiceButtonStyle == VoiceButtonStyle.FLOATING) {
+            FloatingGlassMicButton(
+                isListening = voiceUiState.isListening,
+                onClick = onToggleVoiceListening
+            )
+        }
+
         // 4. SIMULATOR SHEET (Opened from top-left "Simulator" badge; easily hidden via SHOW_SIMULATOR_TOOLS)
         if (SHOW_SIMULATOR_TOOLS && showSimulatorDrawer) {
             Box(
@@ -249,6 +270,9 @@ fun RioSenseDashboardScreen(
                     },
                     onEngineOffVoiceReminderChange = { enabled ->
                         repository.setEngineOffVoiceReminderEnabled(enabled)
+                    },
+                    onVoiceButtonStyleChange = { style ->
+                        repository.setVoiceButtonStyle(style)
                     },
                     initialTab = controlsInitialTab,
                     errorLogs = errorLogs,
@@ -397,26 +421,28 @@ private fun TopObsidianBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Voice Command Microphone Button (0% CPU when idle; cyan highlight when listening)
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (isVoiceListening) Color(0xFF152536) else Color(0xFF0E1014))
-                    .then(
-                        if (isVoiceListening) {
-                            Modifier.border(0.9.dp, Color(0xFF63B3ED), RoundedCornerShape(8.dp))
-                        } else {
-                            Modifier
-                        }
+            // Voice Command Microphone Button (shown in Top Bar by default; hidden when Floating style is active)
+            if (telemetry.voiceButtonStyle == VoiceButtonStyle.TOP_BAR) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isVoiceListening) Color(0xFF152536) else Color(0xFF0E1014))
+                        .then(
+                            if (isVoiceListening) {
+                                Modifier.border(0.9.dp, Color(0xFF63B3ED), RoundedCornerShape(8.dp))
+                            } else {
+                                Modifier
+                            }
+                        )
+                        .clickable { onToggleVoiceListening() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    MicrophoneVectorIcon(
+                        tint = if (isVoiceListening) Color(0xFF63B3ED) else ObsidianColors.MutedSilver,
+                        modifier = Modifier.size(13.dp)
                     )
-                    .clickable { onToggleVoiceListening() },
-                contentAlignment = Alignment.Center
-            ) {
-                MicrophoneVectorIcon(
-                    tint = if (isVoiceListening) Color(0xFF63B3ED) else ObsidianColors.MutedSilver,
-                    modifier = Modifier.size(13.dp)
-                )
+                }
             }
 
             Box(
@@ -680,6 +706,135 @@ private fun VoiceCommandFloatingOverlay(
                 color = ObsidianColors.DimSilver,
                 fontSize = 10.sp
             )
+        }
+    }
+}
+
+/**
+ * AssistiveTouch-inspired draggable frosted-glass rounded square microphone button.
+ * Snaps smoothly to the nearest horizontal screen edge on release so it never obscures
+ * the central 360-degree Kia Rio viewport.
+ */
+@Composable
+private fun FloatingGlassMicButton(
+    isListening: Boolean,
+    onClick: () -> Unit
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val density = LocalDensity.current
+        val buttonSizeDp = 52.dp
+        val edgeMarginDp = 12.dp
+        val buttonSizePx = with(density) { buttonSizeDp.toPx() }
+        val edgeMarginPx = with(density) { edgeMarginDp.toPx() }
+        val maxXPx = (with(density) { maxWidth.toPx() } - buttonSizePx - edgeMarginPx).coerceAtLeast(edgeMarginPx)
+        val maxYPx = (with(density) { maxHeight.toPx() } - buttonSizePx - edgeMarginPx).coerceAtLeast(edgeMarginPx)
+
+        var isDragging by remember { mutableStateOf(false) }
+        var targetX by remember { mutableFloatStateOf(-1f) }
+        var targetY by remember { mutableFloatStateOf(-1f) }
+
+        // Default position: right edge, slightly below vertical center (ergonomic thumb reach)
+        val resolvedX = if (targetX < 0f) maxXPx else targetX.coerceIn(edgeMarginPx, maxXPx)
+        val resolvedY = if (targetY < 0f) (maxYPx * 0.58f).coerceIn(edgeMarginPx, maxYPx) else targetY.coerceIn(edgeMarginPx, maxYPx)
+
+        val animatedX by animateFloatAsState(
+            targetValue = resolvedX,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMediumLow
+            ),
+            label = "floatingMicSnapX"
+        )
+
+        val displayX = if (isDragging) resolvedX else animatedX
+        val shape = RoundedCornerShape(15.dp)
+
+        val glassBgBrush = if (isListening) {
+            Brush.verticalGradient(
+                colors = listOf(Color(0xDE193B5A), Color(0xCC0E2236))
+            )
+        } else if (isDragging) {
+            Brush.verticalGradient(
+                colors = listOf(Color(0xD42C3648), Color(0xC2181F2B))
+            )
+        } else {
+            Brush.verticalGradient(
+                colors = listOf(Color(0xB8252D3D), Color(0xA6141923))
+            )
+        }
+
+        val glassRimBrush = if (isListening) {
+            Brush.verticalGradient(
+                colors = listOf(Color(0xEB63B3ED), Color(0x8863B3ED))
+            )
+        } else {
+            Brush.verticalGradient(
+                colors = listOf(Color.White.copy(alpha = 0.34f), Color.White.copy(alpha = 0.14f))
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(displayX.roundToInt(), resolvedY.roundToInt()) }
+                .size(buttonSizeDp)
+                .clip(shape)
+                .background(glassBgBrush)
+                .border(width = 1.dp, brush = glassRimBrush, shape = shape)
+                .pointerInput(maxXPx, maxYPx) {
+                    detectDragGestures(
+                        onDragStart = {
+                            isDragging = true
+                            if (targetX < 0f) targetX = maxXPx
+                            if (targetY < 0f) targetY = (maxYPx * 0.58f).coerceIn(edgeMarginPx, maxYPx)
+                        },
+                        onDragEnd = {
+                            isDragging = false
+                            // Snap smoothly to nearest horizontal edge like iPhone AssistiveTouch
+                            val midX = (edgeMarginPx + maxXPx) * 0.5f
+                            targetX = if (targetX < midX) edgeMarginPx else maxXPx
+                        },
+                        onDragCancel = {
+                            isDragging = false
+                        },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            targetX = (targetX + dragAmount.x).coerceIn(edgeMarginPx, maxXPx)
+                            targetY = (targetY + dragAmount.y).coerceIn(edgeMarginPx, maxYPx)
+                        }
+                    )
+                }
+                .clickable { onClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            // Subtle frosted inner glass square (AssistiveTouch depth cue)
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isListening) 0.18f else 0.15f),
+                                Color.White.copy(alpha = 0.05f)
+                            )
+                        )
+                    )
+                    .border(
+                        width = 0.7.dp,
+                        color = if (isListening) Color(0x8863B3ED) else Color.White.copy(alpha = 0.18f),
+                        shape = RoundedCornerShape(11.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                MicrophoneVectorIcon(
+                    tint = if (isListening) {
+                        Color(0xFF63B3ED)
+                    } else {
+                        ObsidianColors.PureSilver.copy(alpha = 0.94f)
+                    },
+                    modifier = Modifier.size(21.dp)
+                )
+            }
         }
     }
 }

@@ -109,6 +109,11 @@ enum class VoiceSttMode {
     SYSTEM
 }
 
+enum class VoiceButtonStyle {
+    TOP_BAR,
+    FLOATING
+}
+
 data class VehicleTelemetry(
     val speedKmh: Int = 0,
     val rpm: Int = 780,
@@ -133,7 +138,8 @@ data class VehicleTelemetry(
     val audioAlarmMuted: Boolean = false,
     val engineOffVoiceReminderEnabled: Boolean = true,
     val welcomeSoundMode: WelcomeSoundMode = WelcomeSoundMode.VOICE,
-    val voiceSttMode: VoiceSttMode = VoiceSttMode.OFFLINE
+    val voiceSttMode: VoiceSttMode = VoiceSttMode.OFFLINE,
+    val voiceButtonStyle: VoiceButtonStyle = VoiceButtonStyle.TOP_BAR
 ) {
     companion object {
         const val DEFAULT_SPEED_LOCK_THRESHOLD_KMH = 20
