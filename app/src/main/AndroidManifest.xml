@@ -12,13 +12,22 @@
     <!-- Network state permission for seamless Online <-> Offline Voice Auto-Switch -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Android 11+ package visibility for SpeechRecognizer, Google Maps & Spotify -->
+    <!-- Android 11+ package visibility for SpeechRecognizer, Media/Maps & Universal App Launcher -->
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+        </intent>
         <package android:name="com.google.android.apps.maps" />
         <package android:name="com.spotify.music" />
+        <package android:name="com.google.android.apps.youtube.music" />
+        <package android:name="com.google.android.youtube" />
     </queries>
 
     <!-- Fitur USB Host untuk Kabel OBD2-to-USB & Receiver TPMS USB -->

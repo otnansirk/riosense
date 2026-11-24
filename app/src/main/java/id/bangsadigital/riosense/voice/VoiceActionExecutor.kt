@@ -75,18 +75,42 @@ class VoiceActionExecutor(
                 )
             }
 
-            is VoiceCommand.PlaySpotify -> {
-                val ok = launchSpotifySearchAndPlay(command.query, command.isPlaylist)
-                VoiceFeedbackCard(
-                    title = "Spotify",
-                    subtitle = if (ok) {
-                        if (isId) {
+            is VoiceCommand.PlayMusic -> {
+                val launchedApp = launchMusicWithFallback(
+                    query = command.query,
+                    isPlaylist = command.isPlaylist,
+                    preferredApp = command.preferredApp
+                )
+                if (launchedApp != null) {
+                    VoiceFeedbackCard(
+                        title = launchedApp,
+                        subtitle = if (isId) {
                             if (command.isPlaylist) "Memutar playlist: ${command.query}" else "Memutar: ${command.query}"
                         } else {
                             if (command.isPlaylist) "Playing playlist: ${command.query}" else "Playing: ${command.query}"
                         }
+                    )
+                } else {
+                    VoiceFeedbackCard(
+                        title = if (isId) "Pemutar Musik" else "Music Player",
+                        subtitle = if (isId) {
+                            "Aplikasi pemutar musik tidak ditemukan di Head Unit."
+                        } else {
+                            "No compatible music player found on this Head Unit."
+                        },
+                        isError = true
+                    )
+                }
+            }
+
+            is VoiceCommand.PlayVideo -> {
+                val ok = launchYouTubeVideoSearch(command.query)
+                VoiceFeedbackCard(
+                    title = "YouTube",
+                    subtitle = if (ok) {
+                        if (isId) "Memutar video: ${command.query}" else "Playing video: ${command.query}"
                     } else {
-                        if (isId) "Spotify belum terpasang di Head Unit." else "Spotify is not installed on this Head Unit."
+                        if (isId) "YouTube tidak ditemukan di Head Unit." else "YouTube is not installed on this Head Unit."
                     },
                     isError = !ok
                 )
@@ -103,6 +127,26 @@ class VoiceActionExecutor(
                     },
                     isError = !ok
                 )
+            }
+
+            is VoiceCommand.OpenApp -> {
+                val openedLabel = launchInstalledAppByName(command.appName)
+                if (openedLabel != null) {
+                    VoiceFeedbackCard(
+                        title = openedLabel,
+                        subtitle = if (isId) "Membuka $openedLabel" else "Opening $openedLabel"
+                    )
+                } else {
+                    VoiceFeedbackCard(
+                        title = if (isId) "Aplikasi Tidak Ditemukan" else "App Not Found",
+                        subtitle = if (isId) {
+                            "\"${command.appName}\" belum terpasang di perangkat ini."
+                        } else {
+                            "\"${command.appName}\" is not installed on this device."
+                        },
+                        isError = true
+                    )
+                }
             }
 
             is VoiceCommand.MediaControl -> {
@@ -352,14 +396,67 @@ class VoiceActionExecutor(
         }
     }
 
-    private fun launchSpotifySearchAndPlay(query: String, isPlaylist: Boolean): Boolean {
+    /**
+     * Plays music with deterministic fallback priority:
+     * Default (AUTO): Spotify -> YouTube Music -> Any other installed music player -> YouTube.
+     * Explicit preference honors the requested app first, then falls back cleanly.
+     */
+    private fun launchMusicWithFallback(
+        query: String,
+        isPlaylist: Boolean,
+        preferredApp: MusicAppPreference
+    ): String? {
         val focus = if (isPlaylist) {
+            @Suppress("DEPRECATION")
             MediaStore.Audio.Playlists.ENTRY_CONTENT_TYPE
         } else {
             MediaStore.Audio.Media.ENTRY_CONTENT_TYPE
         }
+
+        val order = when (preferredApp) {
+            MusicAppPreference.SPOTIFY -> listOf("SPOTIFY", "YT_MUSIC", "OTHER_MUSIC", "YOUTUBE")
+            MusicAppPreference.YOUTUBE_MUSIC -> listOf("YT_MUSIC", "SPOTIFY", "OTHER_MUSIC", "YOUTUBE")
+            MusicAppPreference.YOUTUBE -> listOf("YOUTUBE", "YT_MUSIC", "SPOTIFY", "OTHER_MUSIC")
+            MusicAppPreference.AUTO -> listOf("SPOTIFY", "YT_MUSIC", "OTHER_MUSIC", "YOUTUBE")
+        }
+
+        for (step in order) {
+            when (step) {
+                "SPOTIFY" -> {
+                    if (isPackageInstalled(PKG_SPOTIFY) &&
+                        launchMediaSearchForPackage(PKG_SPOTIFY, query, focus)
+                    ) {
+                        return "Spotify"
+                    }
+                }
+                "YT_MUSIC" -> {
+                    if (isPackageInstalled(PKG_YOUTUBE_MUSIC) &&
+                        launchMediaSearchForPackage(PKG_YOUTUBE_MUSIC, query, focus)
+                    ) {
+                        return "YouTube Music"
+                    }
+                }
+                "OTHER_MUSIC" -> {
+                    val generic = launchAnyOtherMusicPlayer(query, focus)
+                    if (generic != null) return generic
+                }
+                "YOUTUBE" -> {
+                    if (launchYouTubeVideoSearch(query)) {
+                        return "YouTube"
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun launchMediaSearchForPackage(
+        packageName: String,
+        query: String,
+        focus: String
+    ): Boolean {
         val intent = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
-            setPackage("com.spotify.music")
+            setPackage(packageName)
             putExtra(MediaStore.EXTRA_MEDIA_FOCUS, focus)
             putExtra(SearchManager.QUERY, query)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -367,18 +464,122 @@ class VoiceActionExecutor(
         return runCatching {
             context.startActivity(intent)
             true
-        }.getOrElse {
-            // Fallback: generic media play-from-search (e.g. YouTube Music)
-            runCatching {
-                val generic = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
-                    putExtra(MediaStore.EXTRA_MEDIA_FOCUS, focus)
-                    putExtra(SearchManager.QUERY, query)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(generic)
-                true
-            }.getOrDefault(false)
+        }.getOrDefault(false)
+    }
+
+    private fun launchAnyOtherMusicPlayer(query: String, focus: String): String? {
+        val probe = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
+            putExtra(MediaStore.EXTRA_MEDIA_FOCUS, focus)
+            putExtra(SearchManager.QUERY, query)
         }
+        val pm = context.packageManager
+        val handlers = runCatching { pm.queryIntentActivities(probe, 0) }.getOrDefault(emptyList())
+        val other = handlers.firstOrNull { info ->
+            val pkg = info.activityInfo?.packageName
+            pkg != null &&
+                pkg != context.packageName &&
+                pkg != PKG_SPOTIFY &&
+                pkg != PKG_YOUTUBE_MUSIC &&
+                pkg != PKG_YOUTUBE
+        } ?: return null
+
+        val pkg = other.activityInfo.packageName
+        val label = runCatching { other.loadLabel(pm).toString() }.getOrDefault("Music")
+        return if (launchMediaSearchForPackage(pkg, query, focus)) label else null
+    }
+
+    private fun launchYouTubeVideoSearch(query: String): Boolean {
+        if (isPackageInstalled(PKG_YOUTUBE)) {
+            val ytSearch = Intent(Intent.ACTION_SEARCH).apply {
+                setPackage(PKG_YOUTUBE)
+                putExtra(SearchManager.QUERY, query)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (runCatching { context.startActivity(ytSearch); true }.getOrDefault(false)) {
+                return true
+            }
+        }
+        // Fallback via YouTube web/deep-link URL
+        val encoded = Uri.encode(query)
+        val webIntent = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("https://www.youtube.com/results?search_query=$encoded")
+        ).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return runCatching {
+            context.startActivity(webIntent)
+            true
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Searches all launcher-installed applications on the Head Unit (zero background cost)
+     * and opens the best match by app label or common alias.
+     */
+    private fun launchInstalledAppByName(rawQuery: String): String? {
+        val query = normalizeAppQuery(rawQuery)
+        if (query.isEmpty()) return null
+
+        val pm = context.packageManager
+        val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val apps = runCatching { pm.queryIntentActivities(launcherIntent, 0) }
+            .getOrDefault(emptyList())
+            .filter { it.activityInfo?.packageName != context.packageName }
+
+        // Common Indonesian/English shorthand aliases
+        val aliasCandidates = when (query) {
+            "yt", "yutub", "yutup" -> listOf("youtube")
+            "yt music", "yutub musik", "youtube musik" -> listOf("youtube music", "yt music")
+            "wa" -> listOf("whatsapp")
+            "ig" -> listOf("instagram")
+            "maps", "peta", "google map" -> listOf("maps", "google maps")
+            "pengaturan android", "settings android", "setting hp" -> listOf("settings", "setelan", "pengaturan")
+            else -> listOf(query)
+        }
+
+        var bestPkg: String? = null
+        var bestLabel: String? = null
+        var bestScore = 0
+
+        for (info in apps) {
+            val pkg = info.activityInfo?.packageName ?: continue
+            val label = runCatching { info.loadLabel(pm).toString() }.getOrDefault("")
+            val normLabel = normalizeAppQuery(label)
+            if (normLabel.isEmpty()) continue
+
+            for (candidate in aliasCandidates) {
+                val score = when {
+                    normLabel == candidate -> 100
+                    normLabel.startsWith(candidate) -> 85
+                    normLabel.contains(candidate) -> 70
+                    candidate.contains(normLabel) && normLabel.length >= 3 -> 60
+                    else -> 0
+                }
+                if (score > bestScore) {
+                    bestScore = score
+                    bestPkg = pkg
+                    bestLabel = label
+                }
+            }
+        }
+
+        val targetPkg = bestPkg ?: return null
+        return if (launchPackage(targetPkg)) bestLabel ?: rawQuery else null
+    }
+
+    private fun normalizeAppQuery(input: String): String =
+        input.lowercase().replace(Regex("[^a-z0-9\\s]"), " ").replace(Regex("\\s+"), " ").trim()
+
+    private fun isPackageInstalled(packageName: String): Boolean =
+        context.packageManager.getLaunchIntentForPackage(packageName) != null
+
+    companion object {
+        private const val PKG_SPOTIFY = "com.spotify.music"
+        private const val PKG_YOUTUBE_MUSIC = "com.google.android.apps.youtube.music"
+        private const val PKG_YOUTUBE = "com.google.android.youtube"
     }
 
     private fun launchPackage(packageName: String): Boolean {

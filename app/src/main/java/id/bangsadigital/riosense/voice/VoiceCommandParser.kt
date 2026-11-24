@@ -6,6 +6,7 @@ import id.bangsadigital.riosense.ui.i18n.AppLanguage
 enum class MediaAction { NEXT, PREVIOUS, PLAY, PAUSE }
 enum class VolumeAction { UP, DOWN, MUTE }
 enum class StatusTopic { OVERVIEW, COOLANT, BATTERY, TIRES, SERVICE, ERRORS }
+enum class MusicAppPreference { AUTO, SPOTIFY, YOUTUBE_MUSIC, YOUTUBE }
 
 sealed interface VoiceCommand {
     data class NavigateMaps(
@@ -15,8 +16,14 @@ sealed interface VoiceCommand {
         val avoidTolls: Boolean = false
     ) : VoiceCommand
     data object OpenMaps : VoiceCommand
-    data class PlaySpotify(val query: String, val isPlaylist: Boolean = false) : VoiceCommand
+    data class PlayMusic(
+        val query: String,
+        val isPlaylist: Boolean = false,
+        val preferredApp: MusicAppPreference = MusicAppPreference.AUTO
+    ) : VoiceCommand
+    data class PlayVideo(val query: String) : VoiceCommand
     data object OpenSpotify : VoiceCommand
+    data class OpenApp(val appName: String) : VoiceCommand
     data class MediaControl(val action: MediaAction) : VoiceCommand
     data class VolumeControl(val action: VolumeAction) : VoiceCommand
     data class SetVolumePercent(val percent: Int) : VoiceCommand
@@ -111,10 +118,13 @@ object VoiceCommandParser {
             return VoiceCommand.VolumeControl(VolumeAction.MUTE)
         }
 
-        // 3. Spotify / Music search & play
-        parseSpotifyCommand(rawLower)?.let { return it }
+        // 3. Video playback / YouTube search (default: YouTube)
+        parseVideoCommand(rawLower)?.let { return it }
 
-        // 4. Google Maps navigation & location search
+        // 4. Music playback (default priority: Spotify -> YouTube Music -> Other Music -> YouTube)
+        parseMusicCommand(rawLower)?.let { return it }
+
+        // 5. Google Maps navigation & location search
         parseMapsCommand(rawLower)?.let { return it }
 
         // 5. Language switching
@@ -176,6 +186,9 @@ object VoiceCommandParser {
             return VoiceCommand.MinimizeApp
         }
 
+        // 9. Universal App Launcher ("buka youtube", "buka waze", "open netflix", etc.)
+        parseOpenAppCommand(rawLower)?.let { return it }
+
         return VoiceCommand.Unknown(rawInput)
     }
 
@@ -212,7 +225,8 @@ object VoiceCommandParser {
             "PLAY_SPOTIFY" -> {
                 val query = extractNaturalMusicQuery(rawLower)
                 val isPlaylist = rawLower.contains("playlist") || rawLower.contains("daftar putar") || rawLower.contains("santai")
-                if (query.isNotEmpty()) VoiceCommand.PlaySpotify(query = query, isPlaylist = isPlaylist)
+                val pref = detectPreferredMusicApp(rawLower)
+                if (query.isNotEmpty()) VoiceCommand.PlayMusic(query = query, isPlaylist = isPlaylist, preferredApp = pref)
                 else VoiceCommand.OpenSpotify
             }
             "OPEN_SPOTIFY" -> VoiceCommand.OpenSpotify
@@ -400,22 +414,61 @@ object VoiceCommandParser {
         return cleaned
     }
 
-    private fun parseSpotifyCommand(text: String): VoiceCommand? {
+    private fun parseVideoCommand(text: String): VoiceCommand? {
+        val videoRegexes = listOf(
+            Regex("\\b(?:putar(?:kan|in)?|cari(?:kan|in)?|tonton|nonton|play|watch|search)\\s+(?:video\\s+)(.+)$"),
+            Regex("\\b(?:putar(?:kan|in)?|cari(?:kan|in)?|tonton|nonton|play|watch|search)\\s+(.+?)\\s+(?:di|on|in)\\s+(?:youtube|yt)\\b")
+        )
+        for (regex in videoRegexes) {
+            val raw = regex.find(text)?.groupValues?.getOrNull(1)?.trim()
+            if (!raw.isNullOrEmpty()) {
+                // Skip if explicitly requesting YouTube Music (handled by parseMusicCommand)
+                if (text.contains("youtube music") || text.contains("yt music")) continue
+                val clean = raw
+                    .replace(Regex("\\s+(?:di|on|in)\\s+(?:youtube|yt)$"), "")
+                    .replace(Regex("\\b(tolong|dong|ya|deh|please)\\b"), " ")
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+                if (clean.isNotEmpty()) {
+                    return VoiceCommand.PlayVideo(query = clean)
+                }
+            }
+        }
+        return null
+    }
+
+    private fun detectPreferredMusicApp(text: String): MusicAppPreference = when {
+        text.contains("spotify") -> MusicAppPreference.SPOTIFY
+        text.contains("youtube music") || text.contains("yt music") -> MusicAppPreference.YOUTUBE_MUSIC
+        text.contains("youtube") || Regex("\\byt\\b").containsMatchIn(text) -> MusicAppPreference.YOUTUBE
+        else -> MusicAppPreference.AUTO
+    }
+
+    private fun parseMusicCommand(text: String): VoiceCommand? {
         if (text == "buka spotify" || text == "open spotify") {
             return VoiceCommand.OpenSpotify
         }
 
         val isPlaylist = text.contains("playlist") || text.contains("daftar putar")
+        val preferredApp = detectPreferredMusicApp(text)
         val musicTriggers = listOf(
             "putar musik playlist ",
             "putar lagu playlist ",
+            "putarkan playlist ",
+            "puterin playlist ",
             "putar playlist ",
             "play playlist ",
             "carikan musik ",
+            "cariin musik ",
             "cari musik ",
             "carikan lagu ",
+            "cariin lagu ",
             "cari lagu ",
+            "putarkan musik ",
+            "puterin musik ",
             "putar musik ",
+            "putarkan lagu ",
+            "puterin lagu ",
             "putar lagu ",
             "play song ",
             "play music ",
@@ -425,22 +478,45 @@ object VoiceCommandParser {
 
         val matchedTrigger = musicTriggers.firstOrNull { text.contains(it) } ?: return null
         val after = text.substringAfter(matchedTrigger)
-            .replace(Regex("\\s+(di|on|in|from|dari)\\s+spotify$"), "")
-            .replace(Regex("\\s+(lalu|terus|dan|then|and)\\s+(play|putar)$"), "")
-            .replace(Regex("^spotify\\s+"), "")
+            .replace(Regex("\\s+(?:di|on|in|from|dari)\\s+(?:spotify|youtube\\s+music|yt\\s+music|youtube|yt)$"), "")
+            .replace(Regex("\\s+(?:lalu|terus|dan|then|and)\\s+(?:play|putar)$"), "")
+            .replace(Regex("^(?:spotify|youtube\\s+music|yt\\s+music)\\s+"), "")
+            .replace(Regex("\\b(tolong|dong|ya|deh|please)\\b"), " ")
+            .replace(Regex("\\s+"), " ")
             .trim()
 
         if (after.isEmpty()) {
-            return if (text.contains("spotify")) VoiceCommand.OpenSpotify else null
+            return when (preferredApp) {
+                MusicAppPreference.SPOTIFY -> VoiceCommand.OpenSpotify
+                MusicAppPreference.YOUTUBE_MUSIC -> VoiceCommand.OpenApp("youtube music")
+                MusicAppPreference.YOUTUBE -> VoiceCommand.OpenApp("youtube")
+                MusicAppPreference.AUTO -> null
+            }
         }
 
-        val explicitMusicContext = text.contains("spotify") || text.contains("musik") ||
-            text.contains("music") || text.contains("lagu") || text.contains("song") || isPlaylist
+        val explicitMusicContext = preferredApp != MusicAppPreference.AUTO ||
+            text.contains("musik") || text.contains("music") ||
+            text.contains("lagu") || text.contains("song") || isPlaylist
         if (!explicitMusicContext && (matchedTrigger == "play " || matchedTrigger == "putar ")) {
             return null
         }
 
-        return VoiceCommand.PlaySpotify(query = after, isPlaylist = isPlaylist)
+        return VoiceCommand.PlayMusic(
+            query = after,
+            isPlaylist = isPlaylist,
+            preferredApp = preferredApp
+        )
+    }
+
+    private fun parseOpenAppCommand(text: String): VoiceCommand? {
+        val match = Regex("^(?:tolong\\s+)?(?:buka(?:kan|in)?|jalankan|open|launch|start)\\s+(?:aplikasi\\s+|app\\s+)?(.+)$")
+            .find(text) ?: return null
+        val rawName = match.groupValues[1]
+            .replace(Regex("\\b(dong|ya|deh|aja|saja|please)\\b"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        if (rawName.isEmpty()) return null
+        return VoiceCommand.OpenApp(appName = rawName)
     }
 
     private fun parseMapsCommand(text: String): VoiceCommand? {
