@@ -2,6 +2,7 @@ package id.bangsadigital.riosense.ui.components
 
 import android.app.DatePickerDialog
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,12 +13,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -56,6 +55,12 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+/**
+ * Minimalist Obsidian Maintenance & Service section.
+ * Matches the unified Controls -> Settings & Trip History design language:
+ * flat hairline-separated rows for lists, and low-contrast Obsidian border
+ * containers strictly for grouped detail/form sections.
+ */
 @Composable
 fun MaintenanceServiceTabContent(
     maintenance: MaintenanceState,
@@ -162,192 +167,180 @@ private fun MaintenanceListView(
         }
     }
 
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        // Overview Header: Odometer (direct input), Total Spent & Reminder Lead-Time
-        Column(
+    Column(modifier = modifier.fillMaxWidth()) {
+        // 1. Flat Overview Row: Odometer (inline edit) & Total Spent
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF14171E))
-                .padding(horizontal = 12.dp, vertical = 9.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (editingOdometer) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("ODO", color = ObsidianColors.DimSilver, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold)
-                        Box(
-                            modifier = Modifier
-                                .width(92.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFF0E1015))
-                                .padding(horizontal = 8.dp, vertical = 5.dp)
-                        ) {
-                            BasicTextField(
-                                value = odometerInput,
-                                onValueChange = { text ->
-                                    odometerInput = text.filter { it.isDigit() }.take(6)
-                                },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                textStyle = TextStyle(
-                                    color = ObsidianColors.PureSilver,
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace
-                                ),
-                                cursorBrush = SolidColor(ObsidianColors.PureSilver),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                        CompactChipButton(label = s.save, highlighted = true) {
-                            odometerInput.toIntOrNull()?.let { onUpdateOdometer(it) }
-                            editingOdometer = false
-                        }
-                        CompactChipButton(label = s.cancel) {
-                            odometerInput = maintenance.currentOdometerKm.toString()
-                            editingOdometer = false
-                        }
-                    }
-                } else {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.clickable {
-                            odometerInput = maintenance.currentOdometerKm.toString()
-                            editingOdometer = true
-                        }
-                    ) {
-                        Text("ODO", color = ObsidianColors.DimSilver, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            text = "${String.format("%,d", maintenance.currentOdometerKm)} km",
-                            color = ObsidianColors.PureSilver,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Text(s.edit, color = Color(0xFF63B3ED), fontSize = 9.5.sp, fontWeight = FontWeight.Medium)
-                    }
-
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = s.totalSpent,
-                            color = ObsidianColors.DimSilver,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = 0.5.sp
-                        )
-                        Text(
-                            text = formatIdr(maintenance.totalMaintenanceCostIdr),
-                            color = ObsidianColors.PureSilver,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            if (editingOdometer) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(
-                        text = s.remind,
-                        color = ObsidianColors.DimSilver,
-                        fontSize = 9.5.sp
-                    )
-                    listOf(3, 7, 14).forEach { days ->
-                        CompactChipButton(
-                            label = "${days}d",
-                            highlighted = maintenance.remindDaysBefore == days,
-                            onClick = { onRemindDaysChange(days) }
+                    Text("ODO", color = ObsidianColors.DimSilver, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold)
+                    Box(
+                        modifier = Modifier
+                            .width(92.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(ObsidianColors.ObsidianSubPanel)
+                            .border(1.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 5.dp)
+                    ) {
+                        BasicTextField(
+                            value = odometerInput,
+                            onValueChange = { text ->
+                                odometerInput = text.filter { it.isDigit() }.take(6)
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            textStyle = TextStyle(
+                                color = ObsidianColors.PureSilver,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            ),
+                            cursorBrush = SolidColor(ObsidianColors.PureSilver),
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
-                    listOf(500, 1000).forEach { km ->
-                        CompactChipButton(
-                            label = "${km}km",
-                            highlighted = maintenance.remindKmBefore == km,
-                            onClick = { onRemindKmChange(km) }
-                        )
+                    CompactActionChip(label = s.save, accent = ObsidianColors.CobaltAccent, bg = ObsidianColors.CobaltSurface) {
+                        odometerInput.toIntOrNull()?.let { onUpdateOdometer(it) }
+                        editingOdometer = false
+                    }
+                    CompactActionChip(label = s.cancel) {
+                        odometerInput = maintenance.currentOdometerKm.toString()
+                        editingOdometer = false
                     }
                 }
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.clickable {
+                        odometerInput = maintenance.currentOdometerKm.toString()
+                        editingOdometer = true
+                    }
+                ) {
+                    Text("ODO", color = ObsidianColors.DimSilver, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = "${String.format("%,d", maintenance.currentOdometerKm)} km",
+                        color = ObsidianColors.PureSilver,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        text = s.edit,
+                        color = ObsidianColors.CobaltAccent,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    CompactChipButton(label = s.addBtn, highlighted = true, onClick = onOpenAddForm)
-                    CompactChipButton(label = s.resetBtn, onClick = onResetStandard)
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = s.totalSpent,
+                        color = ObsidianColors.DimSilver,
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = formatIdr(maintenance.totalMaintenanceCostIdr),
+                        color = ObsidianColors.PureSilver,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = FontFamily.Monospace
+                    )
                 }
             }
         }
+        ServiceHairlineDivider()
 
-        // Fast-Moving Parts List
+        // 2. Flat Reminder Lead-Time & Actions Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = s.remind,
+                    color = ObsidianColors.DimSilver,
+                    fontSize = 9.5.sp
+                )
+                SegmentedPillRow(
+                    options = listOf(3 to "3d", 7 to "7d", 14 to "14d"),
+                    selectedValue = maintenance.remindDaysBefore,
+                    onSelect = onRemindDaysChange
+                )
+                SegmentedPillRow(
+                    options = listOf(500 to "500km", 1000 to "1000km"),
+                    selectedValue = maintenance.remindKmBefore,
+                    onSelect = onRemindKmChange
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                CompactActionChip(
+                    label = s.addBtn,
+                    accent = ObsidianColors.CobaltAccent,
+                    bg = ObsidianColors.CobaltSurface,
+                    onClick = onOpenAddForm
+                )
+                CompactActionChip(label = s.resetBtn, onClick = onResetStandard)
+            }
+        }
+        ServiceHairlineDivider()
+
+        // 3. Flat Hairline-Separated Parts List (dotless, matching Trip History & Settings)
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+                .weight(1f)
         ) {
-            items(sortedItems, key = { it.id }) { item ->
+            itemsIndexed(sortedItems, key = { _, item -> item.id }) { index, item ->
                 val status = item.evaluateStatus(
                     nowMs = nowMs,
                     currentOdometerKm = maintenance.currentOdometerKm,
                     remindDaysBefore = maintenance.remindDaysBefore,
                     remindKmBefore = maintenance.remindKmBefore
                 )
-                val dotColor = maintenanceStatusColor(status)
+                val statusColor = maintenanceStatusColor(status)
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF14171E))
                         .clickable { onSelectItem(item) }
-                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                        .padding(vertical = 10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .clip(CircleShape)
-                                .background(dotColor)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = item.name,
+                            color = ObsidianColors.PureSilver,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = item.name,
-                                color = ObsidianColors.PureSilver,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = item.quickSummary(nowMs, maintenance.currentOdometerKm),
-                                color = if (status == MaintenanceStatus.OK) ObsidianColors.DimSilver else dotColor,
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = item.quickSummary(nowMs, maintenance.currentOdometerKm),
+                            color = if (status == MaintenanceStatus.OK) ObsidianColors.DimSilver else statusColor,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
                     }
 
                     Row(
@@ -358,7 +351,7 @@ private fun MaintenanceListView(
                             Text(
                                 text = formatIdr(item.totalCostIdr),
                                 color = ObsidianColors.DimSilver,
-                                fontSize = 9.5.sp,
+                                fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
@@ -368,6 +361,9 @@ private fun MaintenanceListView(
                             fontSize = 16.sp
                         )
                     }
+                }
+                if (index < sortedItems.lastIndex) {
+                    ServiceHairlineDivider()
                 }
             }
         }
@@ -400,14 +396,15 @@ private fun MaintenanceItemDetailView(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // 1. Schedule Overview Card + Primary Record Button
+        // 1. Schedule Overview Group (ObsidianPanel + 1dp ObsidianBorder)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF14171E))
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
+                .background(ObsidianColors.ObsidianPanel)
+                .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -427,7 +424,8 @@ private fun MaintenanceItemDetailView(
                     text = status.label.uppercase(),
                     color = accent,
                     fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
                 )
             }
             Text(
@@ -436,7 +434,13 @@ private fun MaintenanceItemDetailView(
                 fontSize = 10.5.sp
             )
 
-            ServiceMetaRow(s.lastService, "${formatDateOnly(item.lastServiceDateMs)} · ${String.format("%,d", item.lastServiceOdometerKm)} km")
+            Spacer(modifier = Modifier.height(2.dp))
+            ServiceHairlineDivider()
+            ServiceMetaRow(
+                s.lastService,
+                "${formatDateOnly(item.lastServiceDateMs)} · ${String.format("%,d", item.lastServiceOdometerKm)} km"
+            )
+            ServiceHairlineDivider()
             ServiceMetaRow(
                 s.nextDue,
                 buildString {
@@ -444,69 +448,38 @@ private fun MaintenanceItemDetailView(
                     item.nextDueOdometerKm()?.let { append(" · ${String.format("%,d", it)} km") }
                 }
             )
+            ServiceHairlineDivider()
             ServiceMetaRow(s.partTotalSpent, formatIdr(item.totalCostIdr))
 
-            Spacer(modifier = Modifier.height(3.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(Color(0xFF1D2C24))
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(ObsidianColors.CobaltSurface)
+                    .border(1.dp, ObsidianColors.CobaltAccent.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
                     .clickable { onOpenRecordForm() }
                     .padding(vertical = 9.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = s.recordServiceBtn,
-                    color = Color(0xFF68D391),
+                    color = ObsidianColors.CobaltAccent,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
                 )
             }
         }
 
-        // 2. Permanent Service History List
+        // 2. Reminder Interval Presets Group
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF14171E))
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
-        ) {
-            Text(
-                text = s.serviceHistoryTitle(item.history.size),
-                color = ObsidianColors.DimSilver,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.6.sp
-            )
-
-            if (item.history.isEmpty()) {
-                Text(
-                    text = s.noServiceRecords,
-                    color = ObsidianColors.DimSilver,
-                    fontSize = 10.5.sp
-                )
-            } else {
-                item.history.forEach { record ->
-                    ServiceHistoryRow(
-                        record = record,
-                        canDelete = item.history.size > 1,
-                        onDelete = { onDeleteHistoryRecord(record.id) }
-                    )
-                }
-            }
-        }
-
-        // 3. Reminder Schedule Presets (Clean & Fast on Car Touchscreen)
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF14171E))
-                .padding(12.dp),
+                .background(ObsidianColors.ObsidianPanel)
+                .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
@@ -522,53 +495,86 @@ private fun MaintenanceItemDetailView(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(s.timeLabel, color = ObsidianColors.MutedSilver, fontSize = 10.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf(0 to s.offLabel, 6 to "6m", 12 to "12m", 24 to "24m", 48 to "48m").forEach { (months, label) ->
-                        CompactChipButton(
-                            label = label,
-                            highlighted = item.intervalMonths == months,
-                            onClick = { onUpdateSchedule(months, item.intervalKm) }
-                        )
-                    }
-                }
+                Text(s.timeLabel, color = ObsidianColors.MutedSilver, fontSize = 10.5.sp)
+                SegmentedPillRow(
+                    options = listOf(0 to s.offLabel, 6 to "6m", 12 to "12m", 24 to "24m", 48 to "48m"),
+                    selectedValue = item.intervalMonths,
+                    onSelect = { months -> onUpdateSchedule(months, item.intervalKm) }
+                )
             }
+
+            ServiceHairlineDivider()
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(s.distanceLabel, color = ObsidianColors.MutedSilver, fontSize = 10.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf(0 to s.offLabel, 5000 to "5k", 10000 to "10k", 20000 to "20k", 40000 to "40k").forEach { (km, label) ->
-                        CompactChipButton(
-                            label = label,
-                            highlighted = item.intervalKm == km,
-                            onClick = { onUpdateSchedule(item.intervalMonths, km) }
-                        )
+                Text(s.distanceLabel, color = ObsidianColors.MutedSilver, fontSize = 10.5.sp)
+                SegmentedPillRow(
+                    options = listOf(0 to s.offLabel, 5000 to "5k", 10000 to "10k", 20000 to "20k", 40000 to "40k"),
+                    selectedValue = item.intervalKm,
+                    onSelect = { km -> onUpdateSchedule(item.intervalMonths, km) }
+                )
+            }
+        }
+
+        // 3. Permanent Service History Group
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(ObsidianColors.ObsidianPanel)
+                .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = s.serviceHistoryTitle(item.history.size),
+                color = ObsidianColors.DimSilver,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.6.sp
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+
+            if (item.history.isEmpty()) {
+                Text(
+                    text = s.noServiceRecords,
+                    color = ObsidianColors.DimSilver,
+                    fontSize = 10.5.sp,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            } else {
+                item.history.forEachIndexed { idx, record ->
+                    ServiceHistoryRow(
+                        record = record,
+                        canDelete = item.history.size > 1,
+                        onDelete = { onDeleteHistoryRecord(record.id) }
+                    )
+                    if (idx < item.history.lastIndex) {
+                        ServiceHairlineDivider()
                     }
                 }
             }
+        }
 
-            if (onDelete != null) {
-                Spacer(modifier = Modifier.height(2.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF281A1D))
-                        .clickable { onDelete() }
-                        .padding(vertical = 7.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = s.deleteCustomPart,
-                        color = ObsidianColors.CrimsonAlert,
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+        if (onDelete != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(ObsidianColors.CrimsonSurface)
+                    .clickable { onDelete() }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = s.deleteCustomPart,
+                    color = ObsidianColors.CrimsonAlert,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }
@@ -583,9 +589,7 @@ private fun ServiceHistoryRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF0E1015))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(vertical = 7.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Row(
@@ -607,7 +611,7 @@ private fun ServiceHistoryRow(
                 if (record.costIdr > 0L) {
                     Text(
                         text = formatIdr(record.costIdr),
-                        color = Color(0xFF68D391),
+                        color = ObsidianColors.EmeraldNominal,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = FontFamily.Monospace
@@ -681,7 +685,8 @@ private fun RecordServiceForm(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF14171E))
+                .background(ObsidianColors.ObsidianPanel)
+                .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(12.dp))
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -701,8 +706,8 @@ private fun RecordServiceForm(
                 ) {
                     Text(s.serviceDate, color = ObsidianColors.MutedSilver, fontSize = 10.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        CompactChipButton(s.today) { selectedDateMs = System.currentTimeMillis() }
-                        CompactChipButton(s.yesterday) {
+                        CompactActionChip(s.today) { selectedDateMs = System.currentTimeMillis() }
+                        CompactActionChip(s.yesterday) {
                             selectedDateMs = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(1)
                         }
                     }
@@ -711,7 +716,8 @@ private fun RecordServiceForm(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF0E1015))
+                        .background(ObsidianColors.ObsidianSubPanel)
+                        .border(1.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(8.dp))
                         .clickable { openDatePicker() }
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -726,7 +732,7 @@ private fun RecordServiceForm(
                     )
                     Text(
                         text = s.pickDate,
-                        color = Color(0xFF63B3ED),
+                        color = ObsidianColors.CobaltAccent,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -767,8 +773,15 @@ private fun RecordServiceForm(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(if (canSave) Color(0xFF1D2C24) else Color(0xFF181B22))
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (canSave) ObsidianColors.CobaltSurface else ObsidianColors.ObsidianSubPanel)
+                    .then(
+                        if (canSave) {
+                            Modifier.border(1.dp, ObsidianColors.CobaltAccent.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                        } else {
+                            Modifier.border(1.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(8.dp))
+                        }
+                    )
                     .clickable(enabled = canSave) {
                         onSave(selectedDateMs, parsedOdo ?: currentOdometerKm, parsedCost, noteText)
                     }
@@ -777,7 +790,7 @@ private fun RecordServiceForm(
             ) {
                 Text(
                     text = s.saveServiceRecord,
-                    color = if (canSave) Color(0xFF68D391) else ObsidianColors.DimSilver,
+                    color = if (canSave) ObsidianColors.CobaltAccent else ObsidianColors.DimSilver,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -833,7 +846,8 @@ private fun AddCustomMaintenanceForm(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF14171E))
+                .background(ObsidianColors.ObsidianPanel)
+                .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(12.dp))
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -852,7 +866,8 @@ private fun AddCustomMaintenanceForm(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF0E1015))
+                        .background(ObsidianColors.ObsidianSubPanel)
+                        .border(1.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(8.dp))
                         .clickable { openDatePicker() }
                         .padding(horizontal = 12.dp, vertical = 9.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -864,7 +879,12 @@ private fun AddCustomMaintenanceForm(
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
                     )
-                    Text(s.pickDate, color = Color(0xFF63B3ED), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                    Text(
+                        text = s.pickDate,
+                        color = ObsidianColors.CobaltAccent,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
 
@@ -894,19 +914,19 @@ private fun AddCustomMaintenanceForm(
                 onValueChange = { noteText = it }
             )
 
+            ServiceHairlineDivider()
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(s.timeLabel, color = ObsidianColors.MutedSilver, fontSize = 10.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf(0 to s.offLabel, 6 to "6m", 12 to "12m", 24 to "24m").forEach { (m, label) ->
-                        CompactChipButton(label = label, highlighted = intervalMonths == m) {
-                            intervalMonths = m
-                        }
-                    }
-                }
+                SegmentedPillRow(
+                    options = listOf(0 to s.offLabel, 6 to "6m", 12 to "12m", 24 to "24m"),
+                    selectedValue = intervalMonths,
+                    onSelect = { intervalMonths = it }
+                )
             }
 
             Row(
@@ -915,21 +935,26 @@ private fun AddCustomMaintenanceForm(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(s.distanceLabel, color = ObsidianColors.MutedSilver, fontSize = 10.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf(0 to s.offLabel, 5000 to "5k", 10000 to "10k", 20000 to "20k", 40000 to "40k").forEach { (k, label) ->
-                        CompactChipButton(label = label, highlighted = intervalKm == k) {
-                            intervalKm = k
-                        }
-                    }
-                }
+                SegmentedPillRow(
+                    options = listOf(0 to s.offLabel, 5000 to "5k", 10000 to "10k", 20000 to "20k", 40000 to "40k"),
+                    selectedValue = intervalKm,
+                    onSelect = { intervalKm = it }
+                )
             }
 
             val canSave = partName.trim().isNotEmpty()
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(if (canSave) Color(0xFF212A38) else Color(0xFF181B22))
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (canSave) ObsidianColors.CobaltSurface else ObsidianColors.ObsidianSubPanel)
+                    .then(
+                        if (canSave) {
+                            Modifier.border(1.dp, ObsidianColors.CobaltAccent.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                        } else {
+                            Modifier.border(1.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(8.dp))
+                        }
+                    )
                     .clickable(enabled = canSave) {
                         onSave(
                             partName,
@@ -946,7 +971,7 @@ private fun AddCustomMaintenanceForm(
             ) {
                 Text(
                     text = s.saveMaintenancePart,
-                    color = if (canSave) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                    color = if (canSave) ObsidianColors.CobaltAccent else ObsidianColors.DimSilver,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -971,7 +996,8 @@ private fun FormInputField(
                 .fillMaxWidth()
                 .then(if (multiline) Modifier.heightIn(min = 76.dp) else Modifier)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF0E1015))
+                .background(ObsidianColors.ObsidianSubPanel)
+                .border(1.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(8.dp))
                 .padding(horizontal = 12.dp, vertical = 9.dp),
             contentAlignment = Alignment.TopStart
         ) {
@@ -1004,23 +1030,57 @@ private fun FormInputField(
 }
 
 @Composable
-private fun CompactChipButton(
+private fun <T> SegmentedPillRow(
+    options: List<Pair<T, String>>,
+    selectedValue: T,
+    onSelect: (T) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(7.dp))
+            .background(Color(0xFF0E1015))
+            .padding(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        options.forEach { (value, label) ->
+            val selected = value == selectedValue
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                    .clickable { onSelect(value) }
+                    .padding(horizontal = 7.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = label,
+                    color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                    fontSize = 9.5.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactActionChip(
     label: String,
-    highlighted: Boolean = false,
+    accent: Color = ObsidianColors.MutedSilver,
+    bg: Color = ObsidianColors.ObsidianSubPanel,
     onClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(if (highlighted) Color(0xFF212836) else Color(0xFF1B1F28))
+            .background(bg)
             .clickable { onClick() }
-            .padding(horizontal = 7.dp, vertical = 4.dp)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
         Text(
             text = label,
-            color = if (highlighted) ObsidianColors.PureSilver else ObsidianColors.MutedSilver,
+            color = accent,
             fontSize = 9.5.sp,
-            fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Medium
+            fontWeight = FontWeight.SemiBold
         )
     }
 }
@@ -1030,9 +1090,7 @@ private fun ServiceMetaRow(label: String, value: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(7.dp))
-            .background(Color(0xFF0E1015))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(vertical = 5.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1047,10 +1105,20 @@ private fun ServiceMetaRow(label: String, value: String) {
     }
 }
 
+@Composable
+private fun ServiceHairlineDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(ObsidianColors.ObsidianHairline)
+    )
+}
+
 fun maintenanceStatusColor(status: MaintenanceStatus): Color = when (status) {
     MaintenanceStatus.OVERDUE -> ObsidianColors.CrimsonAlert
-    MaintenanceStatus.DUE_SOON -> Color(0xFFE6A23C)
-    MaintenanceStatus.OK -> Color(0xFF38A169)
+    MaintenanceStatus.DUE_SOON -> ObsidianColors.AmberCaution
+    MaintenanceStatus.OK -> ObsidianColors.EmeraldNominal
 }
 
 private fun formatDateOnly(timestampMs: Long): String {

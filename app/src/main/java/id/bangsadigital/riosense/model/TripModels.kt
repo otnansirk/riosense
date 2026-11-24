@@ -72,15 +72,15 @@ object TripSampleSeeder {
         val dayMs = TimeUnit.DAYS.toMillis(1)
         val hourMs = TimeUnit.HOURS.toMillis(1)
 
-        // Trip 1: Sleman -> Malioboro (city commute)
+        // Trip 1: Sleman -> Malioboro (city commute with a realistic Tugu traffic-light stop)
         val trip1Route = listOf(
             TripRoutePoint(-7.7421, 110.3695, 22),
             TripRoutePoint(-7.7468, 110.3688, 38),
             TripRoutePoint(-7.7524, 110.3679, 44),
             TripRoutePoint(-7.7579, 110.3672, 48),
             TripRoutePoint(-7.7638, 110.3669, 32),
-            TripRoutePoint(-7.7695, 110.3668, 28),
-            TripRoutePoint(-7.7752, 110.3666, 36),
+            TripRoutePoint(-7.7695, 110.3668, 14),
+            TripRoutePoint(-7.7752, 110.3666, 0),
             TripRoutePoint(-7.7810, 110.3664, 41),
             TripRoutePoint(-7.7865, 110.3659, 25),
             TripRoutePoint(-7.7926, 110.3658, 18)

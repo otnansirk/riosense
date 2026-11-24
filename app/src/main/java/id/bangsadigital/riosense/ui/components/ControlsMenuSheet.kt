@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -338,6 +339,7 @@ fun ControlsMenuSheet(
                 if (detail != null) {
                     TripHistoryDetailView(
                         trip = detail,
+                        paintColor = telemetry.paintColor,
                         onDelete = {
                             onDeleteTrip(detail.id)
                             selectedTrip = null
@@ -509,45 +511,44 @@ private fun ErrorLogListView(
     modifier: Modifier = Modifier
 ) {
     val s = appStrings()
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
+    Column(modifier = modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = if (entries.isEmpty()) s.noErrorsDetected else s.detectedTapDetails(entries.size),
                 color = ObsidianColors.DimSilver,
-                fontSize = 10.sp
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.Medium
             )
             if (entries.isNotEmpty()) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFF181B22))
+                        .background(ObsidianColors.CrimsonSurface)
                         .clickable { onClear() }
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     Text(
                         text = s.clear,
-                        color = ObsidianColors.MutedSilver,
+                        color = ObsidianColors.CrimsonAlert,
                         fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
         }
+        SettingsHairlineDivider()
 
         if (entries.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF12151B)),
+                    .weight(1f),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -560,61 +561,46 @@ private fun ErrorLogListView(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                    .weight(1f)
             ) {
-                items(entries, key = { it.id }) { item ->
-                    val dotColor = severityColor(item.severity)
+                itemsIndexed(entries, key = { _, item -> item.id }) { index, item ->
+                    val accentColor = severityColor(item.severity)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF14171E))
                             .clickable { onSelect(item) }
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                            .padding(vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(dotColor)
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Text(
-                                        text = item.code,
-                                        color = dotColor,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                    Text(
-                                        text = item.title,
-                                        color = ObsidianColors.PureSilver,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(2.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
                                 Text(
-                                    text = formatDateTimeCompact(item.timestampMs),
-                                    color = ObsidianColors.DimSilver,
-                                    fontSize = 10.sp,
+                                    text = item.code,
+                                    color = accentColor,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
                                     fontFamily = FontFamily.Monospace
                                 )
+                                Text(
+                                    text = item.title,
+                                    color = ObsidianColors.PureSilver,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = formatDateTimeCompact(item.timestampMs),
+                                color = ObsidianColors.DimSilver,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
                         }
 
                         Text(
@@ -623,6 +609,9 @@ private fun ErrorLogListView(
                             fontSize = 16.sp,
                             modifier = Modifier.padding(start = 8.dp)
                         )
+                    }
+                    if (index < entries.lastIndex) {
+                        SettingsHairlineDivider()
                     }
                 }
             }
@@ -636,6 +625,7 @@ private fun ErrorLogDetailView(
     modifier: Modifier = Modifier
 ) {
     val accent = severityColor(entry.severity)
+    val s = appStrings()
 
     Column(
         modifier = modifier
@@ -643,13 +633,15 @@ private fun ErrorLogDetailView(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        // 1. Metadata Group (ObsidianPanel + 1dp ObsidianBorder)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF14171E))
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .background(ObsidianColors.ObsidianPanel)
+                .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -664,14 +656,14 @@ private fun ErrorLogDetailView(
                     Text(
                         text = entry.code,
                         color = accent,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace
                     )
                     Text(
                         text = entry.title,
                         color = ObsidianColors.PureSilver,
-                        fontSize = 13.sp,
+                        fontSize = 12.5.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -681,18 +673,34 @@ private fun ErrorLogDetailView(
                     text = entry.severity.label.uppercase(),
                     color = accent,
                     fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
                 )
             }
 
-            val s = appStrings()
+            Spacer(modifier = Modifier.height(4.dp))
+            SettingsHairlineDivider()
             DetailMetaRow(label = s.timestamp, value = formatDateTimeFull(entry.timestampMs), mono = true)
+            SettingsHairlineDivider()
             DetailMetaRow(label = s.ecuModule, value = entry.subsystem)
+            SettingsHairlineDivider()
             DetailMetaRow(label = s.servicePid, value = entry.pid, mono = true)
+            SettingsHairlineDivider()
             DetailMetaRow(label = s.rawFrame, value = entry.rawFrame, mono = true)
+            SettingsHairlineDivider()
             DetailMetaRow(label = s.source, value = entry.source)
+        }
 
-            Spacer(modifier = Modifier.height(2.dp))
+        // 2. Description & Recommended Action Group
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(ObsidianColors.ObsidianPanel)
+                .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             Text(
                 text = s.description,
                 color = ObsidianColors.DimSilver,
@@ -708,6 +716,9 @@ private fun ErrorLogDetailView(
             )
 
             Spacer(modifier = Modifier.height(2.dp))
+            SettingsHairlineDivider()
+            Spacer(modifier = Modifier.height(2.dp))
+
             Text(
                 text = s.recommendedAction,
                 color = ObsidianColors.DimSilver,
@@ -735,12 +746,11 @@ private fun ActivityLogListView(
     modifier: Modifier = Modifier
 ) {
     val s = appStrings()
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
+    Column(modifier = modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -752,12 +762,13 @@ private fun ActivityLogListView(
                     modifier = Modifier
                         .size(6.dp)
                         .clip(CircleShape)
-                        .background(if (isPaused) ObsidianColors.DimSilver else Color(0xFF38A169))
+                        .background(if (isPaused) ObsidianColors.DimSilver else ObsidianColors.EmeraldNominal)
                 )
                 Text(
                     text = if (isPaused) s.streamPausedTap else s.liveStreamTap,
                     color = ObsidianColors.DimSilver,
-                    fontSize = 10.sp
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Medium
                 )
             }
 
@@ -765,43 +776,42 @@ private fun ActivityLogListView(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFF181B22))
+                        .background(if (isPaused) ObsidianColors.CobaltSurface else ObsidianColors.ObsidianSubPanel)
                         .clickable { onTogglePause() }
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     Text(
                         text = if (isPaused) s.resume else s.pause,
-                        color = ObsidianColors.PureSilver,
+                        color = if (isPaused) ObsidianColors.CobaltAccent else ObsidianColors.PureSilver,
                         fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
                 if (entries.isNotEmpty()) {
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0xFF181B22))
+                            .background(ObsidianColors.CrimsonSurface)
                             .clickable { onClear() }
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text = s.clear,
-                            color = ObsidianColors.MutedSilver,
+                            color = ObsidianColors.CrimsonAlert,
                             fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
             }
         }
+        SettingsHairlineDivider()
 
         if (entries.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF12151B)),
+                    .weight(1f),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -814,19 +824,16 @@ private fun ActivityLogListView(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
+                    .weight(1f)
             ) {
-                items(entries, key = { it.id }) { item ->
+                itemsIndexed(entries, key = { _, item -> item.id }) { index, item ->
                     val isTx = item.direction == ObdDirection.TX
                     val dirColor = if (isTx) ObsidianColors.CobaltAccent else ObsidianColors.EmeraldNominal
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(Color(0xFF14171E))
                             .clickable { onSelect(item) }
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                            .padding(vertical = 9.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -838,7 +845,7 @@ private fun ActivityLogListView(
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(5.dp))
-                                    .background(dirColor.copy(alpha = 0.16f))
+                                    .background(dirColor.copy(alpha = 0.14f))
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Text(
@@ -874,7 +881,7 @@ private fun ActivityLogListView(
                                 Text(
                                     text = formatDateTimeCompact(item.timestampMs),
                                     color = ObsidianColors.DimSilver,
-                                    fontSize = 9.sp,
+                                    fontSize = 9.5.sp,
                                     fontFamily = FontFamily.Monospace
                                 )
                             }
@@ -883,9 +890,12 @@ private fun ActivityLogListView(
                         Text(
                             text = "›",
                             color = ObsidianColors.DimSilver,
-                            fontSize = 15.sp,
+                            fontSize = 16.sp,
                             modifier = Modifier.padding(start = 6.dp)
                         )
+                    }
+                    if (index < entries.lastIndex) {
+                        SettingsHairlineDivider()
                     }
                 }
             }
@@ -900,6 +910,7 @@ private fun ActivityLogDetailView(
 ) {
     val isTx = entry.direction == ObdDirection.TX
     val dirColor = if (isTx) ObsidianColors.CobaltAccent else ObsidianColors.EmeraldNominal
+    val sDetail = appStrings()
 
     Column(
         modifier = modifier
@@ -907,13 +918,15 @@ private fun ActivityLogDetailView(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        // 1. Frame Metadata Group (ObsidianPanel + 1dp ObsidianBorder)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF14171E))
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .background(ObsidianColors.ObsidianPanel)
+                .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -928,22 +941,21 @@ private fun ActivityLogDetailView(
                     Text(
                         text = "PID ${entry.pid}",
                         color = dirColor,
-                        fontSize = 14.sp,
+                        fontSize = 13.5.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace
                     )
                     Text(
                         text = entry.parameterName,
                         color = ObsidianColors.PureSilver,
-                        fontSize = 13.sp,
+                        fontSize = 12.5.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                val s = appStrings()
                 Text(
-                    text = if (isTx) s.txSentToEcu else s.rxReceivedFromEcu,
+                    text = if (isTx) sDetail.txSentToEcu else sDetail.rxReceivedFromEcu,
                     color = dirColor,
                     fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
@@ -951,15 +963,31 @@ private fun ActivityLogDetailView(
                 )
             }
 
-            val sDetail = appStrings()
+            Spacer(modifier = Modifier.height(4.dp))
+            SettingsHairlineDivider()
             DetailMetaRow(label = sDetail.timestamp, value = formatDateTimeFull(entry.timestampMs), mono = true)
+            SettingsHairlineDivider()
             DetailMetaRow(label = sDetail.quickValue, value = entry.quickValue)
+            SettingsHairlineDivider()
             DetailMetaRow(label = sDetail.ecuHeader, value = entry.ecuHeader, mono = true)
+            SettingsHairlineDivider()
             DetailMetaRow(label = sDetail.rawFrame, value = entry.rawFrame, mono = true)
+            SettingsHairlineDivider()
             DetailMetaRow(label = sDetail.formula, value = entry.formula, mono = true)
+            SettingsHairlineDivider()
             DetailMetaRow(label = sDetail.source, value = entry.source)
+        }
 
-            Spacer(modifier = Modifier.height(2.dp))
+        // 2. Decoded Detail Group
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(ObsidianColors.ObsidianPanel)
+                .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             Text(
                 text = sDetail.decodedData,
                 color = ObsidianColors.DimSilver,
@@ -986,9 +1014,7 @@ private fun DetailMetaRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(7.dp))
-            .background(Color(0xFF0E1015))
-            .padding(horizontal = 10.dp, vertical = 7.dp),
+            .padding(vertical = 5.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {

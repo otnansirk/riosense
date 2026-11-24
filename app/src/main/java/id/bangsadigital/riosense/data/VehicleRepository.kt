@@ -949,6 +949,12 @@ class VehicleRepository(context: Context? = null) {
             val baseLat = -7.7828 + simGpsStep * 0.00055
             val baseLng = 110.3670 + kotlin.math.sin(simGpsStep * 0.35) * 0.0012 + simGpsStep * 0.0003
             updatedPoints = updatedPoints + TripRoutePoint(baseLat, baseLng, state.speedKmh)
+        } else if (isIdle && updatedPoints.isNotEmpty() && updatedPoints.size < 1200) {
+            // Capture traffic-light / intersection stop once per stop transition for realistic replay
+            val lastPt = updatedPoints.last()
+            if (lastPt.speedKmh > 2) {
+                updatedPoints = updatedPoints + lastPt.copy(speedKmh = 0)
+            }
         }
 
         _activeTrip.value = current.copy(
