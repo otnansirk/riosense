@@ -1,5 +1,6 @@
 package id.bangsadigital.riosense.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,11 +29,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import id.bangsadigital.riosense.VoiceDashboardNavigation
 import id.bangsadigital.riosense.data.VehicleRepository
 import id.bangsadigital.riosense.model.KiaRioPaintColor
 import id.bangsadigital.riosense.model.MaintenanceState
@@ -44,9 +52,11 @@ import id.bangsadigital.riosense.ui.components.LeftSpeedAndSecurityPanel
 import id.bangsadigital.riosense.ui.components.MinimizedFloatingPillView
 import id.bangsadigital.riosense.ui.components.RightEngineTelemetryPanel
 import id.bangsadigital.riosense.ui.components.SimulatorAndSettingsSheet
+import id.bangsadigital.riosense.ui.i18n.AppLanguage
 import id.bangsadigital.riosense.ui.i18n.LocalAppLanguage
 import id.bangsadigital.riosense.ui.i18n.appStrings
 import id.bangsadigital.riosense.ui.theme.ObsidianColors
+import id.bangsadigital.riosense.voice.VoiceUiState
 
 /**
  * Single feature flag to hide the Simulator badge and drawer once live USB OBD-II testing is complete.
@@ -57,11 +67,30 @@ private const val SHOW_SIMULATOR_TOOLS = true
 fun RioSenseDashboardScreen(
     telemetry: VehicleTelemetry,
     repository: VehicleRepository,
+    voiceUiState: VoiceUiState,
+    voiceNavigation: VoiceDashboardNavigation?,
+    onToggleVoiceListening: () -> Unit,
+    onDismissVoiceFeedback: () -> Unit,
     onEnterPipMode: () -> Unit
 ) {
     var showSimulatorDrawer by remember { mutableStateOf(false) }
     var showControlsDrawer by remember { mutableStateOf(false) }
     var controlsInitialTab by remember { mutableStateOf<ControlsTab?>(null) }
+
+    LaunchedEffect(voiceNavigation) {
+        when (voiceNavigation) {
+            is VoiceDashboardNavigation.OpenControls -> {
+                showSimulatorDrawer = false
+                controlsInitialTab = voiceNavigation.tab
+                showControlsDrawer = true
+            }
+            is VoiceDashboardNavigation.CloseMenus -> {
+                showSimulatorDrawer = false
+                showControlsDrawer = false
+            }
+            null -> Unit
+        }
+    }
 
     val errorLogs by repository.errorLogs.collectAsState()
     val activityLogs by repository.activityLogs.collectAsState()
@@ -98,7 +127,9 @@ fun RioSenseDashboardScreen(
                 telemetry = telemetry,
                 showSimulatorEntry = SHOW_SIMULATOR_TOOLS && telemetry.simulatorMode,
                 hasServiceReminder = dueServiceItems.isNotEmpty(),
+                isVoiceListening = voiceUiState.isListening,
                 onSelectPaint = { repository.setPaintColor(it) },
+                onToggleVoiceListening = onToggleVoiceListening,
                 onToggleMute = { repository.toggleAudioMute() },
                 onOpenSimulator = {
                     showControlsDrawer = false
@@ -153,6 +184,18 @@ fun RioSenseDashboardScreen(
                     controlsInitialTab = ControlsTab.SERVICE
                     showControlsDrawer = true
                 }
+            )
+        }
+
+        // 3b. FLOATING OBSIDIAN VOICE COMMAND OVERLAY (Listening Indicator & Feedback Card)
+        if (voiceUiState.isListening || voiceUiState.feedbackCard != null) {
+            VoiceCommandFloatingOverlay(
+                voiceUiState = voiceUiState,
+                onStopListening = onToggleVoiceListening,
+                onDismissCard = onDismissVoiceFeedback,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 46.dp)
             )
         }
 
@@ -252,7 +295,9 @@ private fun TopObsidianBar(
     telemetry: VehicleTelemetry,
     showSimulatorEntry: Boolean,
     hasServiceReminder: Boolean,
+    isVoiceListening: Boolean,
     onSelectPaint: (KiaRioPaintColor) -> Unit,
+    onToggleVoiceListening: () -> Unit,
     onToggleMute: () -> Unit,
     onOpenSimulator: () -> Unit,
     onOpenControls: () -> Unit,
@@ -352,6 +397,28 @@ private fun TopObsidianBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Voice Command Microphone Button (0% CPU when idle; cyan highlight when listening)
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isVoiceListening) Color(0xFF152536) else Color(0xFF0E1014))
+                    .then(
+                        if (isVoiceListening) {
+                            Modifier.border(0.9.dp, Color(0xFF63B3ED), RoundedCornerShape(8.dp))
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .clickable { onToggleVoiceListening() },
+                contentAlignment = Alignment.Center
+            ) {
+                MicrophoneVectorIcon(
+                    tint = if (isVoiceListening) Color(0xFF63B3ED) else ObsidianColors.MutedSilver,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
+
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
@@ -522,5 +589,153 @@ private fun BottomAlertBanner(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun VoiceCommandFloatingOverlay(
+    voiceUiState: VoiceUiState,
+    onStopListening: () -> Unit,
+    onDismissCard: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isId = LocalAppLanguage.current == AppLanguage.ID
+
+    if (voiceUiState.isListening) {
+        Row(
+            modifier = modifier
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xF011161F))
+                .border(0.9.dp, Color(0xFF63B3ED).copy(alpha = 0.65f), RoundedCornerShape(14.dp))
+                .clickable { onStopListening() }
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF63B3ED))
+            )
+            Column {
+                Text(
+                    text = if (isId) "Mendengarkan..." else "Listening...",
+                    color = Color(0xFF63B3ED),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (voiceUiState.partialTranscript.isNotBlank()) {
+                    Text(
+                        text = "\"${voiceUiState.partialTranscript}\"",
+                        color = ObsidianColors.PureSilver,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+        return
+    }
+
+    val card = voiceUiState.feedbackCard ?: return
+    val accent = if (card.isError) ObsidianColors.CrimsonAlert else Color(0xFF68D391)
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth(0.56f)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xF2101319))
+            .border(0.8.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
+            .clickable { onDismissCard() }
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(accent)
+            )
+            Text(
+                text = card.title,
+                color = ObsidianColors.PureSilver,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        Text(
+            text = card.subtitle,
+            color = if (card.isError) ObsidianColors.MutedSilver else ObsidianColors.PureSilver,
+            fontSize = 11.sp
+        )
+        card.detailLines.forEach { line ->
+            Text(
+                text = line,
+                color = ObsidianColors.DimSilver,
+                fontSize = 10.sp
+            )
+        }
+    }
+}
+
+/**
+ * Pixel-centered vector microphone icon drawn on Canvas.
+ */
+@Composable
+private fun MicrophoneVectorIcon(
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val stroke = 1.4.dp.toPx()
+
+        // Capsule head
+        val capW = w * 0.38f
+        val capH = h * 0.50f
+        val capLeft = (w - capW) * 0.5f
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(capLeft, h * 0.08f),
+            size = Size(capW, capH),
+            cornerRadius = CornerRadius(capW * 0.5f, capW * 0.5f),
+            style = Stroke(width = stroke)
+        )
+
+        // U-shaped receiver arc
+        val arcW = w * 0.68f
+        val arcH = h * 0.44f
+        drawArc(
+            color = tint,
+            startAngle = 0f,
+            sweepAngle = 180f,
+            useCenter = false,
+            topLeft = Offset((w - arcW) * 0.5f, h * 0.28f),
+            size = Size(arcW, arcH),
+            style = Stroke(width = stroke, cap = StrokeCap.Round)
+        )
+
+        // Stand stem + base
+        drawLine(
+            color = tint,
+            start = Offset(w * 0.5f, h * 0.72f),
+            end = Offset(w * 0.5f, h * 0.90f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = tint,
+            start = Offset(w * 0.30f, h * 0.90f),
+            end = Offset(w * 0.70f, h * 0.90f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
     }
 }

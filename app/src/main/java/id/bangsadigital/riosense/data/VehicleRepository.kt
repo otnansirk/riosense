@@ -14,6 +14,7 @@ import id.bangsadigital.riosense.model.ObdErrorSeverity
 import id.bangsadigital.riosense.model.TireInfo
 import id.bangsadigital.riosense.model.TpmsState
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.model.VoiceSttMode
 import id.bangsadigital.riosense.model.WelcomeSoundMode
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -843,6 +844,11 @@ class VehicleRepository(context: Context? = null) {
 
     fun setWelcomeSoundMode(mode: WelcomeSoundMode) {
         _telemetry.update { it.copy(welcomeSoundMode = mode) }
+        persistTelemetrySettings()
+    }
+
+    fun setVoiceSttMode(mode: VoiceSttMode) {
+        _telemetry.update { it.copy(voiceSttMode = mode) }
         persistTelemetrySettings()
     }
 

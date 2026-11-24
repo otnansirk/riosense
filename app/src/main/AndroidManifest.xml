@@ -1,12 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Izin Auto-Start saat Head Unit / Mesin Menyala -->
+    <!-- Auto-start permission when Head Unit / Ignition turns ON -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Izin Floating Overlay saat Minimize di atas Maps / Spotify -->
+    <!-- Floating overlay permission when minimized over Maps / Spotify -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- Izin Foreground Service untuk Telemetri OBD2 & Alarm Pintu/TPMS -->
+    <!-- Foreground service permission for OBD-II telemetry & alarms -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Microphone permission for RioSense Voice Command -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Network state permission for seamless Online <-> Offline Voice Auto-Switch -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Android 11+ package visibility for SpeechRecognizer, Google Maps & Spotify -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <package android:name="com.google.android.apps.maps" />
+        <package android:name="com.spotify.music" />
+    </queries>
 
     <!-- Fitur USB Host untuk Kabel OBD2-to-USB & Receiver TPMS USB -->
     <uses-feature

@@ -52,7 +52,7 @@ android {
     }
 
     androidResources {
-        noCompress += listOf("glb", "gltf", "bin")
+        noCompress += listOf("glb", "gltf", "bin", "onnx")
     }
 }
 
@@ -70,4 +70,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.foundation:foundation")
+
+    // On-device Offline Semantic AI (ONNX Runtime Android)
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.19.2")
 }

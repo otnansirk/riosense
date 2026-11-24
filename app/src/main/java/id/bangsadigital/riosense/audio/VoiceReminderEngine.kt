@@ -29,6 +29,14 @@ class VoiceReminderEngine(private val context: Context) {
         playRawClip(R.raw.voice_chime_intro, nextResId = voiceResId)
     }
 
+    fun playListenChime() {
+        playRawClip(R.raw.voice_listen_chime)
+    }
+
+    fun playAckChime() {
+        playRawClip(R.raw.voice_ack_chime)
+    }
+
     fun playWelcomeGreeting(mode: WelcomeSoundMode, language: AppLanguage) {
         when (mode) {
             WelcomeSoundMode.OFF -> Unit

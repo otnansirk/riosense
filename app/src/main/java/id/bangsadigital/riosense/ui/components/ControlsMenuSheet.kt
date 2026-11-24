@@ -1,7 +1,19 @@
 package id.bangsadigital.riosense.ui.components
 
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import android.speech.ModelDownloadListener
+import android.speech.RecognitionSupport
+import android.speech.RecognitionSupportCallback
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,10 +32,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -952,6 +968,241 @@ private fun formatDateTimeFull(timestampMs: Long): String {
     return sdf.format(Date(timestampMs))
 }
 
+/**
+ * Checks whether Android's On-Device Offline Speech Packs for Indonesian (`id-ID`)
+ * and English (`en-US`) are already installed on Android 13+.
+ */
+private fun checkOnDeviceOfflinePacks(
+    context: Context,
+    isId: Boolean,
+    onResult: (statusText: String, allReady: Boolean) -> Unit
+) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        !SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
+    ) {
+        onResult(
+            if (isId) "Paket offline: Kelola di Android" else "Offline packs: Manage in Android",
+            false
+        )
+        return
+    }
+    val recognizer = runCatching {
+        SpeechRecognizer.createOnDeviceSpeechRecognizer(context.applicationContext)
+    }.getOrNull() ?: return
+
+    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+    runCatching {
+        recognizer.checkRecognitionSupport(
+            intent,
+            context.mainExecutor,
+            object : RecognitionSupportCallback {
+                override fun onSupportResult(recognitionSupport: RecognitionSupport) {
+                    val installed = recognitionSupport.installedOnDeviceLanguages
+                        .map { it.lowercase(Locale.US) }
+                    val pending = recognitionSupport.pendingOnDeviceLanguages
+                        .map { it.lowercase(Locale.US) }
+                    val supported = recognitionSupport.supportedOnDeviceLanguages
+                        .map { it.lowercase(Locale.US) }
+
+                    val hasId = installed.any { it.startsWith("id") }
+                    val hasEn = installed.any { it.startsWith("en") }
+                    val pendingId = pending.any { it.startsWith("id") }
+                    val supportsId = supported.any { it.startsWith("id") } || hasId || pendingId
+                    val supportsEn = supported.any { it.startsWith("en") } || hasEn
+
+                    val idLabel = when {
+                        hasId -> if (isId) "ID: Terpasang ✓" else "ID: Installed ✓"
+                        pendingId -> if (isId) "ID: Mengunduh..." else "ID: Downloading..."
+                        supportsId -> if (isId) "ID: Belum diunduh" else "ID: Not downloaded"
+                        else -> if (isId) "ID: Tidak didukung offline di ROM ini" else "ID: Unsupported offline on this ROM"
+                    }
+                    val enLabel = when {
+                        hasEn -> if (isId) "EN: Terpasang ✓" else "EN: Installed ✓"
+                        supportsEn -> if (isId) "EN: Belum diunduh" else "EN: Not downloaded"
+                        else -> if (isId) "EN: Tidak didukung offline" else "EN: Unsupported offline"
+                    }
+                    onResult("$idLabel  ·  $enLabel", hasId && hasEn)
+                    runCatching { recognizer.destroy() }
+                }
+
+                override fun onError(error: Int) {
+                    runCatching { recognizer.destroy() }
+                }
+            }
+        )
+    }.onFailure {
+        runCatching { recognizer.destroy() }
+    }
+}
+
+/**
+ * Triggers Android 13/14+ official On-Device Speech Model download for Indonesian (`id-ID`)
+ * and English (`en-US`) directly without requiring the user to hunt through Settings.
+ * Falls back to Android Voice Input settings on Android 12 and below.
+ */
+private fun triggerOrOpenOfflineSpeechPacks(
+    context: Context,
+    isId: Boolean,
+    onStatusUpdate: (statusText: String, allReady: Boolean) -> Unit
+) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
+    ) {
+        val recognizer = runCatching {
+            SpeechRecognizer.createOnDeviceSpeechRecognizer(context.applicationContext)
+        }.getOrNull()
+
+        if (recognizer != null) {
+            onStatusUpdate(
+                if (isId) "Memeriksa ketersediaan paket offline..." else "Checking offline pack support...",
+                false
+            )
+            val checkIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            runCatching {
+                recognizer.checkRecognitionSupport(
+                    checkIntent,
+                    context.mainExecutor,
+                    object : RecognitionSupportCallback {
+                        override fun onSupportResult(support: RecognitionSupport) {
+                            val installed = support.installedOnDeviceLanguages.map { it.lowercase(Locale.US) }
+                            val supported = support.supportedOnDeviceLanguages.map { it.lowercase(Locale.US) }
+                            val targetLocale = if (isId) "id-ID" else "en-US"
+                            val prefix = if (isId) "id" else "en"
+
+                            val alreadyInstalled = installed.any { it.startsWith(prefix) }
+                            if (alreadyInstalled) {
+                                onStatusUpdate(
+                                    if (isId) "Paket offline ${targetLocale.uppercase(Locale.US)} sudah terpasang ✓"
+                                    else "Offline pack ${targetLocale.uppercase(Locale.US)} already installed ✓",
+                                    true
+                                )
+                                runCatching { recognizer.destroy() }
+                                return
+                            }
+
+                            val exactMatch = supported.firstOrNull { it.startsWith(prefix) }
+                            if (exactMatch == null) {
+                                onStatusUpdate(
+                                    if (isId) "ROM HP ini tidak menyediakan paket offline Bahasa Indonesia via API Android. Gunakan mode Otomatis."
+                                    else "This device ROM does not offer an offline pack for $targetLocale. Use Auto mode.",
+                                    false
+                                )
+                                runCatching { recognizer.destroy() }
+                                return
+                            }
+
+                            val dlIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE, exactMatch)
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                                onStatusUpdate(
+                                    if (isId) "Mengunduh paket offline ($exactMatch)..." else "Downloading offline pack ($exactMatch)...",
+                                    false
+                                )
+                                recognizer.triggerModelDownload(
+                                    dlIntent,
+                                    context.mainExecutor,
+                                    object : ModelDownloadListener {
+                                        override fun onProgress(completedPercent: Int) {
+                                            onStatusUpdate(
+                                                if (isId) "Mengunduh paket offline ($exactMatch): $completedPercent%"
+                                                else "Downloading offline pack ($exactMatch): $completedPercent%",
+                                                false
+                                            )
+                                        }
+
+                                        override fun onSuccess() {
+                                            checkOnDeviceOfflinePacks(context, isId, onStatusUpdate)
+                                            runCatching { recognizer.destroy() }
+                                        }
+
+                                        override fun onScheduled() {
+                                            onStatusUpdate(
+                                                if (isId) "Unduhan dijadwalkan oleh Android (pastikan Wi-Fi aktif)."
+                                                else "Download scheduled by Android (ensure Wi-Fi is connected).",
+                                                false
+                                            )
+                                            runCatching { recognizer.destroy() }
+                                        }
+
+                                        override fun onError(error: Int) {
+                                            onStatusUpdate(
+                                                if (isId) "Gagal mengunduh (kode $error). Pastikan internet aktif."
+                                                else "Download failed (code $error). Ensure internet is active.",
+                                                false
+                                            )
+                                            runCatching { recognizer.destroy() }
+                                        }
+                                    }
+                                )
+                            } else {
+                                recognizer.triggerModelDownload(dlIntent)
+                                onStatusUpdate(
+                                    if (isId) "Unduhan paket offline ($exactMatch) diminta ke Android (cek notifikasi)."
+                                    else "Offline pack download ($exactMatch) requested (check notifications).",
+                                    false
+                                )
+                                runCatching { recognizer.destroy() }
+                            }
+                        }
+
+                        override fun onError(error: Int) {
+                            onStatusUpdate(
+                                if (isId) "Tidak dapat memeriksa paket offline (kode $error). Gunakan mode Otomatis."
+                                else "Unable to check offline packs (code $error). Use Auto mode.",
+                                false
+                            )
+                            runCatching { recognizer.destroy() }
+                        }
+                    }
+                )
+            }.onFailure {
+                runCatching { recognizer.destroy() }
+                openOfflineSpeechPackSettings(context)
+            }
+            return
+        }
+    }
+
+    openOfflineSpeechPackSettings(context)
+}
+
+/**
+ * Fallback for Android < 13: opens Android's Voice Input / Speech settings.
+ */
+private fun openOfflineSpeechPackSettings(context: Context) {
+    val candidates = listOf(
+        // 1. Direct Google Speech Recognition & Synthesis offline language manager (Android 12+)
+        Intent().apply {
+            component = ComponentName(
+                "com.google.android.tts",
+                "com.google.android.apps.speech.tts.googletts.settings.OfflineSpeechRecognitionSettingsActivity"
+            )
+        },
+        // 2. Google App Voice / Offline Speech settings
+        Intent("com.google.android.googlequicksearchbox.action.VOICE_SETTINGS"),
+        // 3. Android system Voice Input settings (tap gear icon next to Google Speech Services)
+        Intent(Settings.ACTION_VOICE_INPUT_SETTINGS),
+        // 4. Google Speech Recognition & Synthesis app info (Storage / Offline packs)
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:com.google.android.tts")),
+        // 5. Text-to-Speech / Speech Services settings fallback
+        Intent("com.android.settings.TTS_SETTINGS"),
+        // 5. System Languages fallback
+        Intent(Settings.ACTION_LOCALE_SETTINGS),
+        // 6. Final fallback to Android Settings
+        Intent(Settings.ACTION_SETTINGS)
+    )
+
+    for (intent in candidates) {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val launched = runCatching {
+            context.startActivity(intent)
+            true
+        }.getOrDefault(false)
+        if (launched) return
+    }
+}
+
 @Composable
 private fun AlarmSettingsView(
     telemetry: VehicleTelemetry,
@@ -976,181 +1227,328 @@ private fun AlarmSettingsView(
         inactiveTrackColor = Color(0xFF1E222B)
     )
 
+    val context = LocalContext.current
+    val isIdLang = currentLanguage == AppLanguage.ID
+    var offlinePackStatus by remember {
+        mutableStateOf(
+            if (isIdLang) "Memeriksa paket offline..." else "Checking offline packs..."
+        )
+    }
+    var offlinePackReady by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    LaunchedEffect(currentLanguage) {
+        checkOnDeviceOfflinePacks(context, isIdLang) { statusText, allReady ->
+            offlinePackStatus = statusText
+            offlinePackReady = allReady
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        // 0. Language Selector (English / Indonesia)
-        SettingsGroupCard(title = s.languageSectionTitle) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = s.languageLabel,
-                    color = ObsidianColors.MutedSilver,
-                    fontSize = 10.5.sp
-                )
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF0E1015))
-                        .padding(3.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    AppLanguage.entries.forEach { lang ->
-                        val selected = lang == currentLanguage
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (selected) Color(0xFF212836) else Color.Transparent)
-                                .clickable { onLanguageChange(lang) }
-                                .padding(horizontal = 12.dp, vertical = 5.dp)
-                        ) {
-                            Text(
-                                text = lang.displayName,
-                                color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
-                                fontSize = 10.sp,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // 0a. Welcome Sound on Engine Start (Off | Chime | Voice)
-        SettingsGroupCard(title = s.welcomeSoundSectionTitle) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = s.welcomeSoundLabel,
-                    color = ObsidianColors.MutedSilver,
-                    fontSize = 10.5.sp,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF0E1015))
-                        .padding(3.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    listOf(
-                        WelcomeSoundMode.OFF to s.offLabel,
-                        WelcomeSoundMode.CHIME to s.chimeModeLabel,
-                        WelcomeSoundMode.VOICE to s.voiceModeLabel
-                    ).forEach { (mode, label) ->
-                        val selected = telemetry.welcomeSoundMode == mode
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (selected) Color(0xFF212836) else Color.Transparent)
-                                .clickable { onWelcomeSoundModeChange(mode) }
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        ) {
-                            Text(
-                                text = label,
-                                color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
-                                fontSize = 10.sp,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // 0b. Engine-OFF Voice Reminder Toggle (TTS)
-        SettingsGroupCard(title = s.voiceReminderSectionTitle) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = s.voiceReminderLabel,
-                    color = ObsidianColors.MutedSilver,
-                    fontSize = 10.5.sp,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF0E1015))
-                        .padding(3.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    listOf(true to s.onLabel, false to s.offLabel).forEach { (enabled, label) ->
-                        val selected = telemetry.engineOffVoiceReminderEnabled == enabled
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (selected) Color(0xFF212836) else Color.Transparent)
-                                .clickable { onEngineOffVoiceReminderChange(enabled) }
-                                .padding(horizontal = 12.dp, vertical = 5.dp)
-                        ) {
-                            Text(
-                                text = label,
-                                color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
-                                fontSize = 10.sp,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Status & Reset Standard Button
+        // 1. Language (flat row, no box, no redundant title)
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (telemetry.isCustomAlertSettings) {
-                    s.customThresholdsActive
-                } else {
-                    s.standardDefaultsActive
-                },
-                color = if (telemetry.isCustomAlertSettings) Color(0xFF63B3ED) else ObsidianColors.DimSilver,
-                fontSize = 10.sp
+                text = s.languageLabel,
+                color = ObsidianColors.PureSilver,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f)
             )
-            Box(
+            Spacer(modifier = Modifier.width(8.dp))
+            Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(if (telemetry.isCustomAlertSettings) Color(0xFF1D2430) else Color(0xFF161920))
-                    .clickable { onResetToStandard() }
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF0E1015))
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                AppLanguage.entries.forEach { lang ->
+                    val selected = lang == currentLanguage
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                            .clickable { onLanguageChange(lang) }
+                            .padding(horizontal = 12.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = lang.displayName,
+                            color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                            fontSize = 10.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+        SettingsHairlineDivider()
+
+        // 2. Welcome Sound on Engine Start (flat row)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = s.welcomeSoundLabel,
+                color = ObsidianColors.PureSilver,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f),
+                maxLines = 2
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF0E1015))
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf(
+                    WelcomeSoundMode.OFF to s.offLabel,
+                    WelcomeSoundMode.CHIME to s.chimeModeLabel,
+                    WelcomeSoundMode.VOICE to s.voiceModeLabel
+                ).forEach { (mode, label) ->
+                    val selected = telemetry.welcomeSoundMode == mode
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                            .clickable { onWelcomeSoundModeChange(mode) }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = label,
+                            color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                            fontSize = 10.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+        SettingsHairlineDivider()
+
+        // 3. Engine-OFF Voice Reminder Toggle (flat row)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = s.voiceReminderLabel,
+                color = ObsidianColors.PureSilver,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f),
+                maxLines = 2
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF0E1015))
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf(true to s.onLabel, false to s.offLabel).forEach { (enabled, label) ->
+                    val selected = telemetry.engineOffVoiceReminderEnabled == enabled
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                            .clickable { onEngineOffVoiceReminderChange(enabled) }
+                            .padding(horizontal = 12.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = label,
+                            color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                            fontSize = 10.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+        SettingsHairlineDivider()
+
+        // 4. Voice Command Offline Pack (flat row: inline status left + Download / Delete pill right)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    text = s.resetStandard,
-                    color = if (telemetry.isCustomAlertSettings) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
-                    fontSize = 10.sp,
+                    text = if (isIdLang) "Perintah suara offline" else "Offline voice pack",
+                    color = ObsidianColors.PureSilver,
+                    fontSize = 11.5.sp,
                     fontWeight = FontWeight.Medium
                 )
+                Text(
+                    text = offlinePackStatus,
+                    color = if (offlinePackReady) Color(0xFF68D391) else ObsidianColors.DimSilver,
+                    fontSize = 10.sp,
+                    maxLines = 2
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            if (offlinePackReady) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF261317))
+                        .clickable { showDeleteConfirm = true }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = s.voiceSttDeleteBtn,
+                        color = ObsidianColors.CrimsonAlert,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF161B24))
+                        .clickable {
+                            triggerOrOpenOfflineSpeechPacks(
+                                context = context,
+                                isId = isIdLang,
+                                onStatusUpdate = { statusText, allReady ->
+                                    offlinePackStatus = statusText
+                                    offlinePackReady = allReady
+                                }
+                            )
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = s.voiceSttDownloadBtn,
+                        color = Color(0xFF63B3ED),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
 
-        // 1. Door Lock Speed Alarm
-        SettingsGroupCard(title = s.doorLockSection) {
+        if (showDeleteConfirm) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirm = false },
+                containerColor = Color(0xFF14171F),
+                titleContentColor = ObsidianColors.PureSilver,
+                textContentColor = ObsidianColors.MutedSilver,
+                title = {
+                    Text(
+                        text = s.voiceSttDeleteConfirmTitle,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                },
+                text = {
+                    Text(
+                        text = s.voiceSttDeleteConfirmBody,
+                        fontSize = 12.sp
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteConfirm = false
+                            openOfflineSpeechPackSettings(context)
+                        }
+                    ) {
+                        Text(
+                            text = s.voiceSttDeleteBtn,
+                            color = ObsidianColors.CrimsonAlert,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirm = false }) {
+                        Text(
+                            text = s.cancel,
+                            color = ObsidianColors.DimSilver
+                        )
+                    }
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Grouped Alarm Thresholds Container (subtle low-contrast Obsidian border box)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF0E1016))
+                .border(1.dp, Color(0xFF1E232E), RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Status & Reset Standard Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (telemetry.isCustomAlertSettings) {
+                        s.customThresholdsActive
+                    } else {
+                        s.standardDefaultsActive
+                    },
+                    color = if (telemetry.isCustomAlertSettings) Color(0xFF63B3ED) else ObsidianColors.DimSilver,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (telemetry.isCustomAlertSettings) Color(0xFF1D2430) else Color(0xFF161920))
+                        .clickable { onResetToStandard() }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        text = s.resetStandard,
+                        color = if (telemetry.isCustomAlertSettings) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            SettingsHairlineDivider()
+
+            // Single-item threshold: Door Lock Speed
             ThresholdSliderItem(
                 label = s.doorLockLabel,
                 valueText = "${telemetry.speedLockAlarmThresholdKmh} km/h",
@@ -1160,41 +1558,10 @@ private fun AlarmSettingsView(
                 onValueChange = { onSpeedLockThresholdChange(it.toInt()) },
                 sliderColors = sliderColors
             )
-        }
 
-        // 2. Tire TPMS Alarm (PSI & Temperature)
-        SettingsGroupCard(title = s.tpmsSection) {
-            ThresholdSliderItem(
-                label = s.tpmsLowLabel,
-                valueText = "${String.format("%.1f", telemetry.tpmsLowThresholdPsi)} PSI",
-                standardText = "${s.stdPrefix}: ${String.format("%.1f", VehicleTelemetry.DEFAULT_TPMS_LOW_PSI)} PSI",
-                value = telemetry.tpmsLowThresholdPsi,
-                valueRange = 18f..32f,
-                onValueChange = onTpmsLowPsiChange,
-                sliderColors = sliderColors
-            )
-            ThresholdSliderItem(
-                label = s.tpmsHighLabel,
-                valueText = "${String.format("%.1f", telemetry.tpmsHighThresholdPsi)} PSI",
-                standardText = "${s.stdPrefix}: ${String.format("%.1f", VehicleTelemetry.DEFAULT_TPMS_HIGH_PSI)} PSI",
-                value = telemetry.tpmsHighThresholdPsi,
-                valueRange = 34f..45f,
-                onValueChange = onTpmsHighPsiChange,
-                sliderColors = sliderColors
-            )
-            ThresholdSliderItem(
-                label = s.tpmsTempLabel,
-                valueText = "${telemetry.tpmsHighTempC} °C",
-                standardText = "${s.stdPrefix}: ${VehicleTelemetry.DEFAULT_TPMS_HIGH_TEMP_C} °C",
-                value = telemetry.tpmsHighTempC.toFloat(),
-                valueRange = 35f..65f,
-                onValueChange = { onTpmsHighTempChange(it.toInt()) },
-                sliderColors = sliderColors
-            )
-        }
+            SettingsHairlineDivider()
 
-        // 3. Engine Coolant Overheat Alarm
-        SettingsGroupCard(title = s.coolantSection) {
+            // Single-item threshold: Engine Coolant Overheat
             ThresholdSliderItem(
                 label = s.coolantLabel,
                 valueText = "${telemetry.coolantOverheatThresholdC} °C",
@@ -1204,44 +1571,86 @@ private fun AlarmSettingsView(
                 onValueChange = { onCoolantOverheatChange(it.toInt()) },
                 sliderColors = sliderColors
             )
-        }
 
-        // 4. Battery Voltage Alarm
-        SettingsGroupCard(title = s.batterySection) {
-            ThresholdSliderItem(
-                label = s.batteryLowLabel,
-                valueText = "${String.format("%.1f", telemetry.batteryLowThresholdV)} V",
-                standardText = "${s.stdPrefix}: ${String.format("%.1f", VehicleTelemetry.DEFAULT_BATTERY_LOW_V)} V",
-                value = telemetry.batteryLowThresholdV,
-                valueRange = 10.5f..12.6f,
-                onValueChange = onBatteryLowChange,
-                sliderColors = sliderColors
-            )
-            ThresholdSliderItem(
-                label = s.batteryHighLabel,
-                valueText = "${String.format("%.1f", telemetry.batteryHighThresholdV)} V",
-                standardText = "${s.stdPrefix}: ${String.format("%.1f", VehicleTelemetry.DEFAULT_BATTERY_HIGH_V)} V",
-                value = telemetry.batteryHighThresholdV,
-                valueRange = 14.4f..16.0f,
-                onValueChange = onBatteryHighChange,
-                sliderColors = sliderColors
-            )
+            // Titled Multi-item Group: Tire TPMS Alarm (subtle Obsidian border box)
+            SettingsGroupSection(title = s.tpmsSection) {
+                ThresholdSliderItem(
+                    label = s.tpmsLowLabel,
+                    valueText = "${String.format("%.1f", telemetry.tpmsLowThresholdPsi)} PSI",
+                    standardText = "${s.stdPrefix}: ${String.format("%.1f", VehicleTelemetry.DEFAULT_TPMS_LOW_PSI)} PSI",
+                    value = telemetry.tpmsLowThresholdPsi,
+                    valueRange = 18f..32f,
+                    onValueChange = onTpmsLowPsiChange,
+                    sliderColors = sliderColors
+                )
+                ThresholdSliderItem(
+                    label = s.tpmsHighLabel,
+                    valueText = "${String.format("%.1f", telemetry.tpmsHighThresholdPsi)} PSI",
+                    standardText = "${s.stdPrefix}: ${String.format("%.1f", VehicleTelemetry.DEFAULT_TPMS_HIGH_PSI)} PSI",
+                    value = telemetry.tpmsHighThresholdPsi,
+                    valueRange = 34f..45f,
+                    onValueChange = onTpmsHighPsiChange,
+                    sliderColors = sliderColors
+                )
+                ThresholdSliderItem(
+                    label = s.tpmsTempLabel,
+                    valueText = "${telemetry.tpmsHighTempC} °C",
+                    standardText = "${s.stdPrefix}: ${VehicleTelemetry.DEFAULT_TPMS_HIGH_TEMP_C} °C",
+                    value = telemetry.tpmsHighTempC.toFloat(),
+                    valueRange = 35f..65f,
+                    onValueChange = { onTpmsHighTempChange(it.toInt()) },
+                    sliderColors = sliderColors
+                )
+            }
+
+            // Titled Multi-item Group: Battery Voltage Alarm (subtle Obsidian border box)
+            SettingsGroupSection(title = s.batterySection) {
+                ThresholdSliderItem(
+                    label = s.batteryLowLabel,
+                    valueText = "${String.format("%.1f", telemetry.batteryLowThresholdV)} V",
+                    standardText = "${s.stdPrefix}: ${String.format("%.1f", VehicleTelemetry.DEFAULT_BATTERY_LOW_V)} V",
+                    value = telemetry.batteryLowThresholdV,
+                    valueRange = 10.5f..12.6f,
+                    onValueChange = onBatteryLowChange,
+                    sliderColors = sliderColors
+                )
+                ThresholdSliderItem(
+                    label = s.batteryHighLabel,
+                    valueText = "${String.format("%.1f", telemetry.batteryHighThresholdV)} V",
+                    standardText = "${s.stdPrefix}: ${String.format("%.1f", VehicleTelemetry.DEFAULT_BATTERY_HIGH_V)} V",
+                    value = telemetry.batteryHighThresholdV,
+                    valueRange = 14.4f..16.0f,
+                    onValueChange = onBatteryHighChange,
+                    sliderColors = sliderColors
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun SettingsGroupCard(
+private fun SettingsHairlineDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(Color(0xFF1A1E26))
+    )
+}
+
+@Composable
+private fun SettingsGroupSection(
     title: String,
     content: @Composable () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF14171E))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF12151C))
+            .border(1.dp, Color(0xFF212733), RoundedCornerShape(10.dp))
+            .padding(horizontal = 11.dp, vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Text(
             text = title,

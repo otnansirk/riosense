@@ -1,0 +1,505 @@
+package id.bangsadigital.riosense.voice
+
+import id.bangsadigital.riosense.ui.components.ControlsTab
+import id.bangsadigital.riosense.ui.i18n.AppLanguage
+
+enum class MediaAction { NEXT, PREVIOUS, PLAY, PAUSE }
+enum class VolumeAction { UP, DOWN, MUTE }
+enum class StatusTopic { OVERVIEW, COOLANT, BATTERY, TIRES, SERVICE, ERRORS }
+
+sealed interface VoiceCommand {
+    data class NavigateMaps(val query: String, val isSearchOnly: Boolean = false) : VoiceCommand
+    data object OpenMaps : VoiceCommand
+    data class PlaySpotify(val query: String, val isPlaylist: Boolean = false) : VoiceCommand
+    data object OpenSpotify : VoiceCommand
+    data class MediaControl(val action: MediaAction) : VoiceCommand
+    data class VolumeControl(val action: VolumeAction) : VoiceCommand
+    data class SetVolumePercent(val percent: Int) : VoiceCommand
+    data class QueryStatus(val topic: StatusTopic) : VoiceCommand
+    data class OpenControls(val tab: ControlsTab?) : VoiceCommand
+    data object CloseMenus : VoiceCommand
+    data object MinimizeApp : VoiceCommand
+    data class SetAlarmMute(val muted: Boolean) : VoiceCommand
+    data class SetLanguage(val language: AppLanguage) : VoiceCommand
+    data class Unknown(val rawText: String) : VoiceCommand
+}
+
+data class ParsedVoiceResult(
+    val command: VoiceCommand,
+    val matchedByAi: Boolean = false,
+    val confidence: Float = 1.0f,
+    val inferenceMs: Long = 0L
+)
+
+/**
+ * Hybrid 2-Tier 100% Offline Bilingual (Indonesian & English) Voice Command Parser:
+ * - Tier 1: Ultra-fast deterministic parser (< 1 ms) with spoken number-word conversion
+ * - Tier 2: On-Device ONNX Multilingual Semantic AI fallback (~20-45 ms) + Smart Slot Extractor
+ */
+object VoiceCommandParser {
+
+    /**
+     * Hybrid 2-Tier parse: runs Tier 1 first, and seamlessly falls back to the
+     * On-Device Offline Semantic AI when natural/casual phrasing is not matched lexically.
+     */
+    suspend fun parseHybrid(
+        rawInput: String,
+        semanticEngine: SemanticNluEngine?
+    ): ParsedVoiceResult {
+        val cleanedForNlu = normalizeIndonesianColloquial(rawInput)
+        val tier1 = parse(cleanedForNlu)
+        if (tier1 !is VoiceCommand.Unknown) {
+            return ParsedVoiceResult(command = tier1, matchedByAi = false, confidence = 1.0f, inferenceMs = 0L)
+        }
+
+        val match = semanticEngine?.classify(cleanedForNlu)
+            ?: return ParsedVoiceResult(command = VoiceCommand.Unknown(rawInput), matchedByAi = false, confidence = 0f, inferenceMs = 0L)
+
+        val mapped = mapSemanticIntent(match.intentId, cleanedForNlu)
+        return if (mapped !is VoiceCommand.Unknown) {
+            ParsedVoiceResult(
+                command = mapped,
+                matchedByAi = true,
+                confidence = match.confidence,
+                inferenceMs = match.inferenceMs
+            )
+        } else {
+            ParsedVoiceResult(command = VoiceCommand.Unknown(rawInput), matchedByAi = false, confidence = match.confidence, inferenceMs = match.inferenceMs)
+        }
+    }
+
+    /**
+     * Tier 1 deterministic parser with Indonesian & English spoken number normalization.
+     */
+    fun parse(rawInput: String): VoiceCommand {
+        val rawLower = rawInput.trim().lowercase().replace(Regex("\\s+"), " ")
+        if (rawLower.isEmpty()) return VoiceCommand.Unknown(rawInput)
+        val text = normalizeSpokenNumbers(rawLower)
+
+        // 1. Media playback controls (Next / Previous / Pause / Play)
+        if (containsAny(text, "next song", "next track", "lagu berikutnya", "lagu selanjutnya", "skip lagu", "ganti lagu", "next")) {
+            if (!text.contains("service") && !text.contains("servis")) {
+                return VoiceCommand.MediaControl(MediaAction.NEXT)
+            }
+        }
+        if (containsAny(text, "previous song", "previous track", "lagu sebelumnya", "kembali lagu", "prev song")) {
+            return VoiceCommand.MediaControl(MediaAction.PREVIOUS)
+        }
+        if (containsAny(text, "pause musik", "pause music", "pause lagu", "stop musik", "stop music", "berhenti musik", "jeda musik") || text == "pause") {
+            return VoiceCommand.MediaControl(MediaAction.PAUSE)
+        }
+        if (containsAny(text, "lanjut musik", "lanjutkan musik", "resume music", "play music", "play musik") || text == "play") {
+            return VoiceCommand.MediaControl(MediaAction.PLAY)
+        }
+
+        // 2. Volume controls (exact percentage bypass + relative up/down/mute)
+        parseExactVolumePercent(text, requireVolumeKeyword = true)?.let {
+            return VoiceCommand.SetVolumePercent(it)
+        }
+        if (containsAny(text, "volume naik", "naikkan volume", "besarkan volume", "volume up", "turn up", "louder", "tambah volume", "keraskan suara", "keraskan volume")) {
+            return VoiceCommand.VolumeControl(VolumeAction.UP)
+        }
+        if (containsAny(text, "volume turun", "turunkan volume", "kecilkan volume", "volume down", "turn down", "quieter", "kurangi volume", "pelankan suara", "pelankan volume")) {
+            return VoiceCommand.VolumeControl(VolumeAction.DOWN)
+        }
+        if (containsAny(text, "mute musik", "mute music", "mute volume", "matikan suara", "senyapkan musik")) {
+            return VoiceCommand.VolumeControl(VolumeAction.MUTE)
+        }
+
+        // 3. Spotify / Music search & play
+        parseSpotifyCommand(rawLower)?.let { return it }
+
+        // 4. Google Maps navigation & location search
+        parseMapsCommand(rawLower)?.let { return it }
+
+        // 5. Language switching
+        if (containsAny(text, "bahasa inggris", "switch to english", "english language", "ganti inggris", "change to english")) {
+            return VoiceCommand.SetLanguage(AppLanguage.EN)
+        }
+        if (containsAny(text, "bahasa indonesia", "switch to indonesian", "ganti indonesia", "indonesian language")) {
+            return VoiceCommand.SetLanguage(AppLanguage.ID)
+        }
+
+        // 6. Alarm chime mute/unmute
+        if (containsAny(text, "matikan alarm", "senyapkan alarm", "mute alarm", "bisukan alarm")) {
+            return VoiceCommand.SetAlarmMute(true)
+        }
+        if (containsAny(text, "nyalakan alarm", "aktifkan alarm", "unmute alarm", "hidupkan alarm")) {
+            return VoiceCommand.SetAlarmMute(false)
+        }
+
+        // 7. Vehicle status & maintenance queries
+        if (containsAny(text, "kapan ganti oli", "jadwal servis", "cek servis", "cek service", "next service", "oil change", "maintenance status", "cek oli")) {
+            return VoiceCommand.QueryStatus(StatusTopic.SERVICE)
+        }
+        if (containsAny(text, "suhu mesin", "cek coolant", "temperatur mesin", "coolant temp", "engine temp")) {
+            return VoiceCommand.QueryStatus(StatusTopic.COOLANT)
+        }
+        if (containsAny(text, "cek aki", "cek baterai", "tegangan aki", "battery status", "check battery", "voltage")) {
+            return VoiceCommand.QueryStatus(StatusTopic.BATTERY)
+        }
+        if (containsAny(text, "cek ban", "tekanan ban", "cek tpms", "tire pressure", "check tires", "check tyres")) {
+            return VoiceCommand.QueryStatus(StatusTopic.TIRES)
+        }
+        if (containsAny(text, "ada error", "cek error", "check error", "fault code", "dtc")) {
+            return VoiceCommand.QueryStatus(StatusTopic.ERRORS)
+        }
+        if (containsAny(text, "cek kondisi mobil", "status mobil", "kondisi mobil", "cek mobil", "car status", "vehicle status", "check car")) {
+            return VoiceCommand.QueryStatus(StatusTopic.OVERVIEW)
+        }
+
+        // 8. RioSense UI navigation
+        if (containsAny(text, "buka servis", "buka service", "open service", "open maintenance")) {
+            return VoiceCommand.OpenControls(ControlsTab.SERVICE)
+        }
+        if (containsAny(text, "buka pengaturan", "buka setting", "open settings", "open setting")) {
+            return VoiceCommand.OpenControls(ControlsTab.SETTINGS)
+        }
+        if (containsAny(text, "buka error", "open error")) {
+            return VoiceCommand.OpenControls(ControlsTab.ERROR_LOG)
+        }
+        if (containsAny(text, "buka activity", "buka aktivitas", "open activity")) {
+            return VoiceCommand.OpenControls(ControlsTab.ACTIVITY_LOG)
+        }
+        if (containsAny(text, "buka menu", "buka controls", "open controls", "open menu")) {
+            return VoiceCommand.OpenControls(null)
+        }
+        if (containsAny(text, "tutup menu", "close menu", "kembali ke dashboard", "back to dashboard")) {
+            return VoiceCommand.CloseMenus
+        }
+        if (containsAny(text, "kecilkan tampilan", "mode mini", "minimize", "perkecil")) {
+            return VoiceCommand.MinimizeApp
+        }
+
+        return VoiceCommand.Unknown(rawInput)
+    }
+
+    /**
+     * Maps a Tier 2 On-Device Semantic AI intent ID to an executable [VoiceCommand]
+     * using smart slot extraction for dynamic values (volume %, destination, music query).
+     */
+    fun mapSemanticIntent(intentId: String, rawInput: String): VoiceCommand {
+        val rawLower = rawInput.trim().lowercase().replace(Regex("\\s+"), " ")
+        val normalized = normalizeSpokenNumbers(rawLower)
+
+        return when (intentId) {
+            "VOLUME_UP" -> {
+                // If the user said e.g. "suaranya kekecilan naikin ke 75 dong", honor the exact target!
+                parseExactVolumePercent(normalized, requireVolumeKeyword = false)
+                    ?.let { VoiceCommand.SetVolumePercent(it) }
+                    ?: VoiceCommand.VolumeControl(VolumeAction.UP)
+            }
+            "VOLUME_DOWN" -> {
+                parseExactVolumePercent(normalized, requireVolumeKeyword = false)
+                    ?.let { VoiceCommand.SetVolumePercent(it) }
+                    ?: VoiceCommand.VolumeControl(VolumeAction.DOWN)
+            }
+            "VOLUME_MUTE" -> VoiceCommand.VolumeControl(VolumeAction.MUTE)
+            "SET_VOLUME_PERCENT" -> {
+                val pct = parseExactVolumePercent(normalized, requireVolumeKeyword = false)
+                if (pct != null) VoiceCommand.SetVolumePercent(pct)
+                else VoiceCommand.VolumeControl(VolumeAction.UP)
+            }
+            "MEDIA_NEXT" -> VoiceCommand.MediaControl(MediaAction.NEXT)
+            "MEDIA_PREVIOUS" -> VoiceCommand.MediaControl(MediaAction.PREVIOUS)
+            "MEDIA_PAUSE" -> VoiceCommand.MediaControl(MediaAction.PAUSE)
+            "MEDIA_PLAY" -> VoiceCommand.MediaControl(MediaAction.PLAY)
+            "PLAY_SPOTIFY" -> {
+                val query = extractNaturalMusicQuery(rawLower)
+                val isPlaylist = rawLower.contains("playlist") || rawLower.contains("daftar putar") || rawLower.contains("santai")
+                if (query.isNotEmpty()) VoiceCommand.PlaySpotify(query = query, isPlaylist = isPlaylist)
+                else VoiceCommand.OpenSpotify
+            }
+            "OPEN_SPOTIFY" -> VoiceCommand.OpenSpotify
+            "NAVIGATE_MAPS" -> {
+                // Guard: never hijack vehicle status questions or non-navigation sentences into Google Maps
+                val hasNavCue = containsAny(
+                    rawLower,
+                    " ke ", " menuju ", "arahkan", "arahin", "navigasi", "rute", "jalan", "maps", "pergi",
+                    " to ", "navigate", "directions", "drive", "take me"
+                )
+                if (!hasNavCue) return VoiceCommand.Unknown(rawInput)
+                val dest = extractNaturalDestination(rawLower)
+                if (dest.isNotEmpty()) VoiceCommand.NavigateMaps(query = dest, isSearchOnly = false)
+                else VoiceCommand.OpenMaps
+            }
+            "SEARCH_MAPS" -> {
+                val hasSearchCue = containsAny(
+                    rawLower,
+                    "cari", "spbu", "pom bensin", "bengkel", "restoran", "makan", "kafe", "masjid",
+                    "atm", "parkir", "terdekat", "sekitar", "lokasi", "tempat", "maps",
+                    "find", "search", "nearby", "nearest", "gas", "restaurant", "workshop", "parking"
+                )
+                if (!hasSearchCue) return VoiceCommand.Unknown(rawInput)
+                val place = extractNaturalSearchPlace(rawLower)
+                if (place.isNotEmpty()) VoiceCommand.NavigateMaps(query = place, isSearchOnly = true)
+                else VoiceCommand.OpenMaps
+            }
+            "OPEN_MAPS" -> VoiceCommand.OpenMaps
+            "STATUS_TIRES" -> VoiceCommand.QueryStatus(StatusTopic.TIRES)
+            "STATUS_COOLANT" -> VoiceCommand.QueryStatus(StatusTopic.COOLANT)
+            "STATUS_BATTERY" -> VoiceCommand.QueryStatus(StatusTopic.BATTERY)
+            "STATUS_SERVICE" -> VoiceCommand.QueryStatus(StatusTopic.SERVICE)
+            "STATUS_ERRORS" -> VoiceCommand.QueryStatus(StatusTopic.ERRORS)
+            "STATUS_OVERVIEW" -> VoiceCommand.QueryStatus(StatusTopic.OVERVIEW)
+            "OPEN_SERVICE" -> VoiceCommand.OpenControls(ControlsTab.SERVICE)
+            "OPEN_SETTINGS" -> VoiceCommand.OpenControls(ControlsTab.SETTINGS)
+            "OPEN_ERROR_LOG" -> VoiceCommand.OpenControls(ControlsTab.ERROR_LOG)
+            "OPEN_ACTIVITY_LOG" -> VoiceCommand.OpenControls(ControlsTab.ACTIVITY_LOG)
+            "OPEN_CONTROLS" -> VoiceCommand.OpenControls(null)
+            "CLOSE_MENUS" -> VoiceCommand.CloseMenus
+            "MINIMIZE_APP" -> VoiceCommand.MinimizeApp
+            "ALARM_MUTE" -> VoiceCommand.SetAlarmMute(true)
+            "ALARM_UNMUTE" -> VoiceCommand.SetAlarmMute(false)
+            "LANG_EN" -> VoiceCommand.SetLanguage(AppLanguage.EN)
+            "LANG_ID" -> VoiceCommand.SetLanguage(AppLanguage.ID)
+            else -> VoiceCommand.Unknown(rawInput)
+        }
+    }
+
+    /**
+     * Normalizes common Indonesian colloquial suffixes (`-nya`) on automotive domain nouns
+     * so "kondisi bannya bagaimana" -> "kondisi ban bagaimana" before lexical & semantic matching.
+     */
+    internal fun normalizeIndonesianColloquial(input: String): String {
+        return input
+            .trim()
+            .lowercase()
+            .replace(Regex("\\s+"), " ")
+            .replace(Regex("\\bban\\s*nya\\b"), "ban")
+            .replace(Regex("\\broda\\s*nya\\b"), "roda")
+            .replace(Regex("\\baki\\s*nya\\b"), "aki")
+            .replace(Regex("\\bbaterai\\s*nya\\b"), "baterai")
+            .replace(Regex("\\bmesin\\s*nya\\b"), "mesin")
+            .replace(Regex("\\bsuhu\\s*nya\\b"), "suhu")
+            .replace(Regex("\\btemperatur\\s*nya\\b"), "temperatur")
+            .replace(Regex("\\bcoolant\\s*nya\\b"), "coolant")
+            .replace(Regex("\\boli\\s*nya\\b"), "oli")
+            .replace(Regex("\\bservis\\s*nya\\b"), "servis")
+            .replace(Regex("\\bservice\\s*nya\\b"), "service")
+            .replace(Regex("\\bsuara\\s*nya\\b"), "suara")
+            .replace(Regex("\\bvolume\\s*nya\\b"), "volume")
+            .replace(Regex("\\blagu\\s*nya\\b"), "lagu")
+            .replace(Regex("\\bmusik\\s*nya\\b"), "musik")
+            .replace(Regex("\\bpengaturan\\s*nya\\b"), "pengaturan")
+            .replace(Regex("\\bmenu\\s*nya\\b"), "menu")
+            .replace(Regex("\\bmobil\\s*nya\\b"), "mobil")
+    }
+
+    /**
+     * Converts Indonesian and English spoken number words (0..100) into digits
+     * so commands like "suaranya jadiin tujuh puluh lima dong" or "set volume to eighty"
+     * are parsed cleanly into exact numbers.
+     */
+    internal fun normalizeSpokenNumbers(input: String): String {
+        var s = input
+
+        // Exact 100
+        s = s.replace(Regex("\\b(seratus|satu ratus|one hundred|a hundred|hundred)\\b"), "100")
+
+        // Indonesian tens + units: e.g. "tujuh puluh lima" -> "75", "delapan puluh" -> "80"
+        val idUnits = mapOf(
+            "satu" to 1, "dua" to 2, "tiga" to 3, "empat" to 4,
+            "lima" to 5, "enam" to 6, "tujuh" to 7, "delapan" to 8, "sembilan" to 9
+        )
+        val unitPattern = idUnits.keys.joinToString("|")
+
+        s = Regex("\\b($unitPattern)\\s+puluh\\s+($unitPattern)\\b").replace(s) { m ->
+            val tens = idUnits[m.groupValues[1]] ?: 0
+            val ones = idUnits[m.groupValues[2]] ?: 0
+            (tens * 10 + ones).toString()
+        }
+        s = Regex("\\b($unitPattern)\\s+puluh\\b").replace(s) { m ->
+            val tens = idUnits[m.groupValues[1]] ?: 0
+            (tens * 10).toString()
+        }
+        // Indonesian teens: "sebelas" -> "11", "lima belas" -> "15"
+        s = s.replace(Regex("\\bsebelas\\b"), "11")
+        s = s.replace(Regex("\\bsepuluh\\b"), "10")
+        s = Regex("\\b($unitPattern)\\s+belas\\b").replace(s) { m ->
+            val ones = idUnits[m.groupValues[1]] ?: 0
+            (10 + ones).toString()
+        }
+
+        // English tens + units: e.g. "seventy five" -> "75", "eighty" -> "80"
+        val enTens = mapOf(
+            "twenty" to 20, "thirty" to 30, "forty" to 40, "fifty" to 50,
+            "sixty" to 60, "seventy" to 70, "eighty" to 80, "ninety" to 90
+        )
+        val enOnes = mapOf(
+            "one" to 1, "two" to 2, "three" to 3, "four" to 4,
+            "five" to 5, "six" to 6, "seven" to 7, "eight" to 8, "nine" to 9
+        )
+        val enTensPat = enTens.keys.joinToString("|")
+        val enOnesPat = enOnes.keys.joinToString("|")
+
+        s = Regex("\\b($enTensPat)[\\s-]+($enOnesPat)\\b").replace(s) { m ->
+            ((enTens[m.groupValues[1]] ?: 0) + (enOnes[m.groupValues[2]] ?: 0)).toString()
+        }
+        s = Regex("\\b($enTensPat)\\b").replace(s) { m ->
+            (enTens[m.groupValues[1]] ?: 0).toString()
+        }
+        val enTeens = mapOf(
+            "ten" to "10", "eleven" to "11", "twelve" to "12", "thirteen" to "13",
+            "fourteen" to "14", "fifteen" to "15", "sixteen" to "16",
+            "seventeen" to "17", "eighteen" to "18", "nineteen" to "19"
+        )
+        for ((word, digit) in enTeens) {
+            s = s.replace(Regex("\\b$word\\b"), digit)
+        }
+
+        return s
+    }
+
+    private fun parseExactVolumePercent(text: String, requireVolumeKeyword: Boolean): Int? {
+        if (requireVolumeKeyword && !containsAny(text, "volume", "suara", "sound", "audio")) return null
+
+        // Named level shortcuts
+        if (containsAny(text, "maksimal", "maksimum", "max", "full", "penuh")) return 100
+        if (containsAny(text, "setengah", "half")) return 50
+        if (containsAny(text, "nol", "zero")) return 0
+
+        if (requireVolumeKeyword) {
+            val match = Regex("(?:volume|suara|suaranya|sound|audio)[^0-9]{0,24}(\\d{1,3})\\s*(?:%|persen|percent)?").find(text)
+                ?: Regex("(\\d{1,3})\\s*(?:%|persen|percent)[^a-z0-9]{0,8}(?:volume|suara|suaranya|sound|audio)").find(text)
+            val value = match?.groupValues?.getOrNull(1)?.toIntOrNull() ?: return null
+            return value.coerceIn(0, 100)
+        } else {
+            val anyNum = Regex("\\b(\\d{1,3})\\b").find(text)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: return null
+            return anyNum.coerceIn(0, 100)
+        }
+    }
+
+    private fun extractNaturalMusicQuery(text: String): String {
+        val cleaned = text
+            .replace(Regex("\\b(tolong|dong|nih|ya|deh|aja|saja|please|some|di|on|in|spotify|pengen|ingin|mau|dengerin|dengarkan|listen|to|putar|puterin|play|carikan|cari)\\b"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        return cleaned.ifEmpty { "chill driving" }
+    }
+
+    private fun extractNaturalDestination(text: String): String {
+        val afterKe = Regex("\\b(?:ke|menuju|to)\\s+(.+)$").find(text)?.groupValues?.getOrNull(1)
+        val raw = afterKe ?: text
+        return raw
+            .replace(Regex("\\b(tolong|dong|nih|ya|deh|please)\\b"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    private fun extractNaturalSearchPlace(text: String): String {
+        val cleaned = text
+            .replace(Regex("\\b(tolong|dong|nih|ya|deh|please|carikan|cariin|cari|find|search|locate|me|a|for|di|maps|google)\\b"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        return cleaned
+    }
+
+    private fun parseSpotifyCommand(text: String): VoiceCommand? {
+        if (text == "buka spotify" || text == "open spotify") {
+            return VoiceCommand.OpenSpotify
+        }
+
+        val isPlaylist = text.contains("playlist") || text.contains("daftar putar")
+        val musicTriggers = listOf(
+            "putar musik playlist ",
+            "putar lagu playlist ",
+            "putar playlist ",
+            "play playlist ",
+            "carikan musik ",
+            "cari musik ",
+            "carikan lagu ",
+            "cari lagu ",
+            "putar musik ",
+            "putar lagu ",
+            "play song ",
+            "play music ",
+            "play ",
+            "putar "
+        )
+
+        val matchedTrigger = musicTriggers.firstOrNull { text.contains(it) } ?: return null
+        val after = text.substringAfter(matchedTrigger)
+            .replace(Regex("\\s+(di|on|in|from|dari)\\s+spotify$"), "")
+            .replace(Regex("\\s+(lalu|terus|dan|then|and)\\s+(play|putar)$"), "")
+            .replace(Regex("^spotify\\s+"), "")
+            .trim()
+
+        if (after.isEmpty()) {
+            return if (text.contains("spotify")) VoiceCommand.OpenSpotify else null
+        }
+
+        val explicitMusicContext = text.contains("spotify") || text.contains("musik") ||
+            text.contains("music") || text.contains("lagu") || text.contains("song") || isPlaylist
+        if (!explicitMusicContext && (matchedTrigger == "play " || matchedTrigger == "putar ")) {
+            return null
+        }
+
+        return VoiceCommand.PlaySpotify(query = after, isPlaylist = isPlaylist)
+    }
+
+    private fun parseMapsCommand(text: String): VoiceCommand? {
+        if (containsAny(text, "buka maps", "buka google maps", "open maps", "open google maps") &&
+            !containsAny(text, " ke ", " cari ", " to ", " search ", " find ")
+        ) {
+            return VoiceCommand.OpenMaps
+        }
+
+        val navTriggers = listOf(
+            "arahkan ke ",
+            "arahin ke ",
+            "navigasi ke ",
+            "navigate to ",
+            "directions to ",
+            "take me to ",
+            "rute ke ",
+            "jalan ke ",
+            "pergi ke ",
+            "buka maps ke ",
+            "buka google maps ke "
+        )
+        for (trigger in navTriggers) {
+            if (text.contains(trigger)) {
+                val dest = text.substringAfter(trigger).trim()
+                if (dest.isNotEmpty()) {
+                    return VoiceCommand.NavigateMaps(query = dest, isSearchOnly = false)
+                }
+            }
+        }
+
+        val searchTriggers = listOf(
+            "carikan lokasi ",
+            "cari lokasi ",
+            "carikan tempat ",
+            "cari tempat ",
+            "cari di maps ",
+            "search maps ",
+            "find nearby ",
+            "cari spbu",
+            "cari pom bensin",
+            "cari bengkel",
+            "cari restoran",
+            "cari kafe",
+            "cari masjid",
+            "cari atm",
+            "cari parkir"
+        )
+        for (trigger in searchTriggers) {
+            if (text.contains(trigger)) {
+                val query = if (trigger.endsWith(" ")) {
+                    text.substringAfter(trigger).trim()
+                } else {
+                    text.substringAfter("cari ").trim()
+                }
+                if (query.isNotEmpty()) {
+                    return VoiceCommand.NavigateMaps(query = query, isSearchOnly = true)
+                }
+            }
+        }
+
+        return null
+    }
+
+    private fun containsAny(text: String, vararg phrases: String): Boolean =
+        phrases.any { text.contains(it) }
+}
