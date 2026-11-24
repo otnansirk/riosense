@@ -97,17 +97,35 @@ class VoiceCommandController(
         cancelDismissTimer()
         ensureRecognizer(preferOnDevice = useOnDevice)
 
-        val localeTag = when (language) {
-            AppLanguage.ID -> "id-ID"
-            AppLanguage.EN -> "en-US"
-        }
+        // Always enable bilingual ID + EN auto-detection independent of UI display language.
+        // Base locale uses "id-ID" (which also handles English loanwords on Android < 14),
+        // while Android 14+ natively auto-switches between full "id-ID" and "en-US" in real time.
+        val allowedBilingual = arrayListOf("id-ID", "en-US")
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, localeTag)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, localeTag)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "id-ID")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "id-ID")
+            putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("en-US", "id-ID"))
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_DETECTION, true)
+                putStringArrayListExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_DETECTION_ALLOWED_LANGUAGES,
+                    allowedBilingual
+                )
+                putExtra(
+                    RecognizerIntent.EXTRA_ENABLE_LANGUAGE_SWITCH,
+                    RecognizerIntent.LANGUAGE_SWITCH_QUICK_RESPONSE
+                )
+                putStringArrayListExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_SWITCH_ALLOWED_LANGUAGES,
+                    allowedBilingual
+                )
+            }
+
             if (forceOffline && !useOnDevice) {
                 putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             }
