@@ -167,6 +167,9 @@ object VoiceCommandParser {
         if (containsAny(text, "buka servis", "buka service", "open service", "open maintenance")) {
             return VoiceCommand.OpenControls(ControlsTab.SERVICE)
         }
+        if (containsAny(text, "buka riwayat perjalanan", "buka perjalanan", "buka trip", "open trip", "trip history")) {
+            return VoiceCommand.OpenControls(ControlsTab.TRIP_HISTORY)
+        }
         if (containsAny(text, "buka pengaturan", "buka setting", "open settings", "open setting")) {
             return VoiceCommand.OpenControls(ControlsTab.SETTINGS)
         }

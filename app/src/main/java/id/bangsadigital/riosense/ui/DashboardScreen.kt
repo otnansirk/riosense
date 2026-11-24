@@ -48,7 +48,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -119,6 +121,8 @@ fun RioSenseDashboardScreen(
     val activityLogs by repository.activityLogs.collectAsState()
     val isActivityPaused by repository.activityLogPaused.collectAsState()
     val maintenance by repository.maintenance.collectAsState()
+    val tripHistory by repository.tripHistory.collectAsState()
+    val activeTrip by repository.activeTrip.collectAsState()
     val dueServiceItems = remember(maintenance) { maintenance.dueOrOverdueItems() }
 
     if (telemetry.isMinimized) {
@@ -151,8 +155,12 @@ fun RioSenseDashboardScreen(
                 showSimulatorEntry = SHOW_SIMULATOR_TOOLS && telemetry.simulatorMode,
                 hasServiceReminder = dueServiceItems.isNotEmpty(),
                 isVoiceListening = voiceUiState.isListening,
+                activeTripKm = if (telemetry.tripRecordingEnabled) activeTrip?.distanceKm else null,
                 onSelectPaint = { repository.setPaintColor(it) },
                 onToggleVoiceListening = onToggleVoiceListening,
+                onToggleTripRecording = {
+                    repository.setTripRecordingEnabled(!telemetry.tripRecordingEnabled)
+                },
                 onToggleMute = { repository.toggleAudioMute() },
                 onOpenSimulator = {
                     showControlsDrawer = false
@@ -285,7 +293,15 @@ fun RioSenseDashboardScreen(
                     onVoiceButtonStyleChange = { style ->
                         repository.setVoiceButtonStyle(style)
                     },
+                    onTripRecordingEnabledChange = { enabled ->
+                        repository.setTripRecordingEnabled(enabled)
+                    },
                     initialTab = controlsInitialTab,
+                    tripHistory = tripHistory,
+                    activeTrip = activeTrip,
+                    onDeleteTrip = { tripId -> repository.deleteTrip(tripId) },
+                    onLoadSampleTrips = { repository.loadSampleTrips() },
+                    onClearTripHistory = { repository.clearTripHistory() },
                     errorLogs = errorLogs,
                     activityLogs = activityLogs,
                     isActivityPaused = isActivityPaused,
@@ -328,11 +344,13 @@ fun RioSenseDashboardScreen(
 @Composable
 private fun TopObsidianBar(
     telemetry: VehicleTelemetry,
+    activeTripKm: Float?,
     showSimulatorEntry: Boolean,
     hasServiceReminder: Boolean,
     isVoiceListening: Boolean,
     onSelectPaint: (KiaRioPaintColor) -> Unit,
     onToggleVoiceListening: () -> Unit,
+    onToggleTripRecording: () -> Unit,
     onToggleMute: () -> Unit,
     onOpenSimulator: () -> Unit,
     onOpenControls: () -> Unit,
@@ -452,6 +470,31 @@ private fun TopObsidianBar(
                     MicrophoneVectorIcon(
                         tint = if (isVoiceListening) ObsidianColors.CobaltAccent else ObsidianColors.MutedSilver,
                         modifier = Modifier.size(13.dp)
+                    )
+                }
+            }
+
+            // Borderless Trip Tracking Shortcut (winding route icon + live km when ON; slashed icon when OFF)
+            Row(
+                modifier = Modifier
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onToggleTripRecording() }
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                TripRouteVectorIcon(
+                    enabled = telemetry.tripRecordingEnabled,
+                    modifier = Modifier.size(14.dp)
+                )
+                if (telemetry.tripRecordingEnabled) {
+                    Text(
+                        text = String.format("%.1f km", activeTripKm ?: 0f),
+                        color = if ((activeTripKm ?: 0f) > 0f) ObsidianColors.PureSilver else ObsidianColors.MutedSilver,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
@@ -971,5 +1014,69 @@ private fun MicrophoneVectorIcon(
             strokeWidth = stroke,
             cap = StrokeCap.Round
         )
+    }
+}
+
+/**
+ * Minimalist winding-route vector icon for GPS trip tracking.
+ * Displays an S-curve route with start/end waypoints in emerald when enabled,
+ * or a dimmed route crossed by a crisp diagonal slash when disabled.
+ */
+@Composable
+private fun TripRouteVectorIcon(
+    enabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val stroke = 1.35.dp.toPx()
+        val routeColor = if (enabled) ObsidianColors.EmeraldNominal else ObsidianColors.DimSilver
+
+        // Winding S-curve path connecting bottom-left start point to top-right destination point
+        val path = Path().apply {
+            moveTo(w * 0.22f, h * 0.78f)
+            cubicTo(
+                w * 0.22f, h * 0.45f,
+                w * 0.78f, h * 0.55f,
+                w * 0.78f, h * 0.22f
+            )
+        }
+        drawPath(
+            path = path,
+            color = routeColor,
+            style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+
+        // Start & end waypoint dots
+        val dotRadius = 1.65.dp.toPx()
+        drawCircle(
+            color = routeColor,
+            radius = dotRadius,
+            center = Offset(w * 0.22f, h * 0.78f)
+        )
+        drawCircle(
+            color = routeColor,
+            radius = dotRadius,
+            center = Offset(w * 0.78f, h * 0.22f)
+        )
+
+        // Crisp diagonal slash when trip recording is turned OFF
+        if (!enabled) {
+            drawLine(
+                color = ObsidianColors.DeepObsidian,
+                start = Offset(w * 0.14f, h * 0.14f),
+                end = Offset(w * 0.86f, h * 0.86f),
+                strokeWidth = stroke * 2.2f,
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = ObsidianColors.MutedSilver,
+                start = Offset(w * 0.14f, h * 0.14f),
+                end = Offset(w * 0.86f, h * 0.86f),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round
+            )
+        }
     }
 }

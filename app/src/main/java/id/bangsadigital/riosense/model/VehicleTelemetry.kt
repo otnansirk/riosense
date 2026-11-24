@@ -139,7 +139,8 @@ data class VehicleTelemetry(
     val engineOffVoiceReminderEnabled: Boolean = true,
     val welcomeSoundMode: WelcomeSoundMode = WelcomeSoundMode.VOICE,
     val voiceSttMode: VoiceSttMode = VoiceSttMode.OFFLINE,
-    val voiceButtonStyle: VoiceButtonStyle = VoiceButtonStyle.TOP_BAR
+    val voiceButtonStyle: VoiceButtonStyle = VoiceButtonStyle.TOP_BAR,
+    val tripRecordingEnabled: Boolean = true
 ) {
     companion object {
         const val DEFAULT_SPEED_LOCK_THRESHOLD_KMH = 20

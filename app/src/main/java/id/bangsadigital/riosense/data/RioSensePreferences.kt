@@ -6,6 +6,9 @@ import id.bangsadigital.riosense.model.KiaRioPaintColor
 import id.bangsadigital.riosense.model.MaintenanceItem
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.ServiceRecord
+import id.bangsadigital.riosense.model.TripRecord
+import id.bangsadigital.riosense.model.TripRoutePoint
+import id.bangsadigital.riosense.model.TripSampleSeeder
 import id.bangsadigital.riosense.model.VehicleTelemetry
 import id.bangsadigital.riosense.model.VoiceButtonStyle
 import id.bangsadigital.riosense.model.VoiceSttMode
@@ -13,6 +16,7 @@ import id.bangsadigital.riosense.model.WelcomeSoundMode
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /**
  * Lightweight local persistence layer backed by Android SharedPreferences.
@@ -38,6 +42,8 @@ class RioSensePreferences(context: Context) {
         private const val KEY_WELCOME_SOUND_MODE = "welcome_sound_mode"
         private const val KEY_VOICE_STT_MODE = "voice_stt_mode"
         private const val KEY_VOICE_BUTTON_STYLE = "voice_button_style"
+        private const val KEY_TRIP_RECORDING_ENABLED = "trip_recording_enabled"
+        private const val KEY_TRIP_SEEDED_V2 = "trip_showcase_seeded_v2"
         private const val KEY_APP_LANGUAGE = "app_language"
 
         private const val KEY_ODOMETER_KM = "maintenance_odometer_km"
@@ -46,8 +52,11 @@ class RioSensePreferences(context: Context) {
         private const val KEY_MAINTENANCE_ITEMS = "maintenance_items_json"
     }
 
+    private val appContext = context.applicationContext
     private val prefs: SharedPreferences =
-        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val tripHistoryFile: File
+        get() = File(appContext.filesDir, "riosense_trip_history.json")
 
     fun loadPersistedTelemetryOverrides(base: VehicleTelemetry): VehicleTelemetry {
         val paintName = prefs.getString(KEY_PAINT_COLOR, base.paintColor.name)
@@ -80,6 +89,10 @@ class RioSensePreferences(context: Context) {
             welcomeSoundMode = welcomeMode,
             voiceSttMode = sttMode,
             voiceButtonStyle = btnStyle,
+            tripRecordingEnabled = prefs.getBoolean(
+                KEY_TRIP_RECORDING_ENABLED,
+                base.tripRecordingEnabled
+            ),
             speedLockAlarmThresholdKmh = prefs.getInt(
                 KEY_SPEED_LOCK_KMH,
                 VehicleTelemetry.DEFAULT_SPEED_LOCK_THRESHOLD_KMH
@@ -119,6 +132,7 @@ class RioSensePreferences(context: Context) {
             .putString(KEY_WELCOME_SOUND_MODE, telemetry.welcomeSoundMode.name)
             .putString(KEY_VOICE_STT_MODE, telemetry.voiceSttMode.name)
             .putString(KEY_VOICE_BUTTON_STYLE, telemetry.voiceButtonStyle.name)
+            .putBoolean(KEY_TRIP_RECORDING_ENABLED, telemetry.tripRecordingEnabled)
             .putInt(KEY_SPEED_LOCK_KMH, telemetry.speedLockAlarmThresholdKmh)
             .putFloat(KEY_TPMS_LOW_PSI, telemetry.tpmsLowThresholdPsi)
             .putFloat(KEY_TPMS_HIGH_PSI, telemetry.tpmsHighThresholdPsi)
@@ -246,5 +260,102 @@ class RioSensePreferences(context: Context) {
                 }
             }
         }.getOrDefault(emptyList())
+    }
+
+    fun loadTripHistory(): List<TripRecord> {
+        val file = tripHistoryFile
+        val alreadySeeded = prefs.getBoolean(KEY_TRIP_SEEDED_V2, false)
+        if (!file.exists()) {
+            val defaults = TripSampleSeeder.defaultShowcaseTrips()
+            saveTripHistory(defaults)
+            prefs.edit().putBoolean(KEY_TRIP_SEEDED_V2, true).apply()
+            return defaults
+        }
+        val parsed = runCatching {
+            val raw = file.readText(Charsets.UTF_8)
+            val arr = JSONArray(raw)
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    val ptsArr = obj.optJSONArray("routePoints")
+                    val points = buildList {
+                        if (ptsArr != null) {
+                            for (j in 0 until ptsArr.length()) {
+                                val p = ptsArr.getJSONObject(j)
+                                add(
+                                    TripRoutePoint(
+                                        lat = p.getDouble("lat"),
+                                        lng = p.getDouble("lng"),
+                                        speedKmh = p.optInt("s", 0)
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    add(
+                        TripRecord(
+                            id = obj.getString("id"),
+                            startTimeMs = obj.getLong("startTimeMs"),
+                            endTimeMs = obj.getLong("endTimeMs"),
+                            distanceKm = obj.getDouble("distanceKm").toFloat(),
+                            durationSec = obj.getLong("durationSec"),
+                            idleSec = obj.optLong("idleSec", 0L),
+                            avgSpeedKmh = obj.getDouble("avgSpeedKmh").toFloat(),
+                            maxSpeedKmh = obj.getInt("maxSpeedKmh"),
+                            maxRpm = obj.optInt("maxRpm", 0),
+                            maxCoolantTempC = obj.optInt("maxCoolantTempC", 88),
+                            minBatteryV = obj.optDouble("minBatteryV", 13.8).toFloat(),
+                            estimatedFuelLiters = obj.optDouble("estimatedFuelLiters", 0.0).toFloat(),
+                            startLabel = obj.optString("startLabel", ""),
+                            endLabel = obj.optString("endLabel", ""),
+                            routePoints = points
+                        )
+                    )
+                }
+            }.sortedByDescending { it.startTimeMs }
+        }.getOrDefault(emptyList())
+
+        if (parsed.isEmpty() && !alreadySeeded) {
+            val defaults = TripSampleSeeder.defaultShowcaseTrips()
+            saveTripHistory(defaults)
+            prefs.edit().putBoolean(KEY_TRIP_SEEDED_V2, true).apply()
+            return defaults
+        }
+        return parsed
+    }
+
+    fun saveTripHistory(trips: List<TripRecord>) {
+        runCatching {
+            val arr = JSONArray()
+            trips.take(500).forEach { trip ->
+                val obj = JSONObject()
+                obj.put("id", trip.id)
+                obj.put("startTimeMs", trip.startTimeMs)
+                obj.put("endTimeMs", trip.endTimeMs)
+                obj.put("distanceKm", trip.distanceKm.toDouble())
+                obj.put("durationSec", trip.durationSec)
+                obj.put("idleSec", trip.idleSec)
+                obj.put("avgSpeedKmh", trip.avgSpeedKmh.toDouble())
+                obj.put("maxSpeedKmh", trip.maxSpeedKmh)
+                obj.put("maxRpm", trip.maxRpm)
+                obj.put("maxCoolantTempC", trip.maxCoolantTempC)
+                obj.put("minBatteryV", trip.minBatteryV.toDouble())
+                obj.put("estimatedFuelLiters", trip.estimatedFuelLiters.toDouble())
+                obj.put("startLabel", trip.startLabel)
+                obj.put("endLabel", trip.endLabel)
+
+                val ptsArr = JSONArray()
+                trip.routePoints.forEach { pt ->
+                    val pObj = JSONObject()
+                    pObj.put("lat", pt.lat)
+                    pObj.put("lng", pt.lng)
+                    pObj.put("s", pt.speedKmh)
+                    ptsArr.put(pObj)
+                }
+                obj.put("routePoints", ptsArr)
+                arr.put(obj)
+            }
+            tripHistoryFile.writeText(arr.toString(), Charsets.UTF_8)
+        }
     }
 }

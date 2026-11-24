@@ -1,6 +1,7 @@
 package id.bangsadigital.riosense.data
 
 import android.content.Context
+import id.bangsadigital.riosense.model.ActiveTripState
 import id.bangsadigital.riosense.model.DoorState
 import id.bangsadigital.riosense.model.KiaRioPaintColor
 import id.bangsadigital.riosense.model.LightState
@@ -13,6 +14,9 @@ import id.bangsadigital.riosense.model.ObdErrorEntry
 import id.bangsadigital.riosense.model.ObdErrorSeverity
 import id.bangsadigital.riosense.model.TireInfo
 import id.bangsadigital.riosense.model.TpmsState
+import id.bangsadigital.riosense.model.TripRecord
+import id.bangsadigital.riosense.model.TripRoutePoint
+import id.bangsadigital.riosense.model.TripSampleSeeder
 import id.bangsadigital.riosense.model.VehicleTelemetry
 import id.bangsadigital.riosense.model.VoiceButtonStyle
 import id.bangsadigital.riosense.model.VoiceSttMode
@@ -94,6 +98,16 @@ class VehicleRepository(context: Context? = null) {
 
     private val _engineStartEventTick = MutableStateFlow(0L)
     val engineStartEventTick: StateFlow<Long> = _engineStartEventTick.asStateFlow()
+
+    private val _tripHistory = MutableStateFlow<List<TripRecord>>(
+        prefs?.loadTripHistory() ?: TripSampleSeeder.defaultShowcaseTrips()
+    )
+    val tripHistory: StateFlow<List<TripRecord>> = _tripHistory.asStateFlow()
+
+    private val _activeTrip = MutableStateFlow<ActiveTripState?>(null)
+    val activeTrip: StateFlow<ActiveTripState?> = _activeTrip.asStateFlow()
+
+    private var simGpsStep = 0
 
     init {
         seedInitialObdLogs()
@@ -263,6 +277,9 @@ class VehicleRepository(context: Context? = null) {
                 updateMaintenance { it.copy(currentOdometerKm = it.currentOdometerKm + wholeKm) }
             }
         }
+
+        // Accumulate active trip telemetry (1.5s interval) whenever engine is running
+        accumulateActiveTripTick(state, deltaSec = 1.5f)
 
         if (_activityLogPaused.value) return
 
@@ -521,10 +538,12 @@ class VehicleRepository(context: Context? = null) {
 
         // Detect live Engine-OFF transition (running >= 500 RPM -> 0 RPM at 0 km/h)
         if (prev.rpm >= 500 && clampedRpm == 0 && clampedSpeed == 0) {
+            finalizeActiveTrip()
             _engineOffEventTick.value = now
         }
         // Detect live Engine-START transition (stopped 0 RPM -> running >= 500 RPM)
         if (prev.rpm == 0 && clampedRpm >= 500) {
+            startNewTripIfNeeded(now)
             _engineStartEventTick.value = now
         }
         recordActivity(
@@ -858,6 +877,129 @@ class VehicleRepository(context: Context? = null) {
         persistTelemetrySettings()
     }
 
+    fun setTripRecordingEnabled(enabled: Boolean) {
+        _telemetry.update { it.copy(tripRecordingEnabled = enabled) }
+        if (!enabled) {
+            finalizeActiveTrip()
+            _activeTrip.value = null
+        }
+        persistTelemetrySettings()
+    }
+
+    fun loadSampleTrips() {
+        val samples = TripSampleSeeder.defaultShowcaseTrips()
+        _tripHistory.value = samples
+        prefs?.saveTripHistory(samples)
+    }
+
+    fun recordGpsRoutePoint(point: TripRoutePoint) {
+        if (!_telemetry.value.tripRecordingEnabled) return
+        val current = _activeTrip.value ?: return
+        if (current.routePoints.size >= 1200) return
+        val speed = if (point.speedKmh > 0) point.speedKmh else _telemetry.value.speedKmh
+        _activeTrip.value = current.copy(
+            routePoints = current.routePoints + point.copy(speedKmh = speed)
+        )
+    }
+
+    fun deleteTrip(tripId: String) {
+        _tripHistory.update { list ->
+            val updated = list.filterNot { it.id == tripId }
+            prefs?.saveTripHistory(updated)
+            updated
+        }
+    }
+
+    fun clearTripHistory() {
+        _tripHistory.value = emptyList()
+        prefs?.saveTripHistory(emptyList())
+    }
+
+    private fun startNewTripIfNeeded(nowMs: Long) {
+        if (!_telemetry.value.tripRecordingEnabled) return
+        if (_activeTrip.value != null) return
+        val state = _telemetry.value
+        simGpsStep = 0
+        _activeTrip.value = ActiveTripState(
+            startTimeMs = nowMs,
+            maxCoolantTempC = state.coolantTempC,
+            minBatteryV = state.batteryVoltage
+        )
+    }
+
+    private fun accumulateActiveTripTick(state: VehicleTelemetry, deltaSec: Float) {
+        if (!state.tripRecordingEnabled) return
+        if (state.rpm < 400) return
+        val now = System.currentTimeMillis()
+        val current = _activeTrip.value ?: ActiveTripState(
+            startTimeMs = now,
+            maxCoolantTempC = state.coolantTempC,
+            minBatteryV = state.batteryVoltage
+        )
+
+        val deltaKm = (state.speedKmh / 3600f) * deltaSec
+        val isIdle = state.speedKmh <= 2
+        // Realistic Kia Rio 1.4L Gamma fuel burn estimate (L/s): ~0.8 L/h idle, ~6.5-8.5 L/100km cruising
+        val fuelRateLph = if (isIdle) 0.85f else (2.4f + (state.rpm / 1000f) * 1.45f)
+        val deltaFuelL = (fuelRateLph / 3600f) * deltaSec
+
+        var updatedPoints = current.routePoints
+        if (state.simulatorMode && state.speedKmh > 5 && updatedPoints.size < 400) {
+            simGpsStep++
+            val baseLat = -7.7828 + simGpsStep * 0.00055
+            val baseLng = 110.3670 + kotlin.math.sin(simGpsStep * 0.35) * 0.0012 + simGpsStep * 0.0003
+            updatedPoints = updatedPoints + TripRoutePoint(baseLat, baseLng, state.speedKmh)
+        }
+
+        _activeTrip.value = current.copy(
+            distanceKm = current.distanceKm + deltaKm,
+            durationSec = ((now - current.startTimeMs) / 1000L).coerceAtLeast(1L),
+            idleSec = current.idleSec + if (isIdle) deltaSec.toLong().coerceAtLeast(1L) else 0L,
+            maxSpeedKmh = maxOf(current.maxSpeedKmh, state.speedKmh),
+            maxRpm = maxOf(current.maxRpm, state.rpm),
+            maxCoolantTempC = maxOf(current.maxCoolantTempC, state.coolantTempC),
+            minBatteryV = minOf(current.minBatteryV, state.batteryVoltage),
+            estimatedFuelLiters = current.estimatedFuelLiters + deltaFuelL,
+            routePoints = updatedPoints
+        )
+    }
+
+    private fun finalizeActiveTrip() {
+        val active = _activeTrip.value ?: return
+        _activeTrip.value = null
+        val endMs = System.currentTimeMillis()
+        val durationSec = ((endMs - active.startTimeMs) / 1000L).coerceAtLeast(active.durationSec)
+        if (durationSec < 5L && active.distanceKm < 0.05f) return
+
+        val avgSpeed = if (durationSec > 0L) (active.distanceKm / (durationSec / 3600f)) else 0f
+        val startPt = active.routePoints.firstOrNull()
+        val endPt = active.routePoints.lastOrNull()
+        val startLbl = if (startPt != null) String.format("%.3f, %.3f", startPt.lat, startPt.lng) else "Start"
+        val endLbl = if (endPt != null) String.format("%.3f, %.3f", endPt.lat, endPt.lng) else "Finish"
+
+        val record = TripRecord(
+            startTimeMs = active.startTimeMs,
+            endTimeMs = endMs,
+            distanceKm = active.distanceKm,
+            durationSec = durationSec,
+            idleSec = active.idleSec,
+            avgSpeedKmh = avgSpeed,
+            maxSpeedKmh = active.maxSpeedKmh,
+            maxRpm = active.maxRpm,
+            maxCoolantTempC = active.maxCoolantTempC,
+            minBatteryV = active.minBatteryV,
+            estimatedFuelLiters = active.estimatedFuelLiters,
+            startLabel = startLbl,
+            endLabel = endLbl,
+            routePoints = active.routePoints
+        )
+        _tripHistory.update { list ->
+            val updated = (listOf(record) + list).take(500)
+            prefs?.saveTripHistory(updated)
+            updated
+        }
+    }
+
     /**
      * Simulates starting the Kia Rio engine (RPM -> 820, Speed -> 0, Battery -> 14.2V)
      * and triggers the time-of-day Welcome Greeting sound.
@@ -888,6 +1030,7 @@ class VehicleRepository(context: Context? = null) {
                 source = currentSourceLabel(next)
             )
         )
+        startNewTripIfNeeded(now)
         _engineStartEventTick.value = now
     }
 
@@ -897,6 +1040,7 @@ class VehicleRepository(context: Context? = null) {
      */
     fun simulateEngineOff() {
         val now = System.currentTimeMillis()
+        finalizeActiveTrip()
         _telemetry.update {
             it.copy(
                 speedKmh = 0,

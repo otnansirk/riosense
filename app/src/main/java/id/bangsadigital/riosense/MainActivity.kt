@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import id.bangsadigital.riosense.audio.VoiceReminderEngine
+import id.bangsadigital.riosense.data.TripGpsTracker
 import id.bangsadigital.riosense.data.VehicleRepository
 import id.bangsadigital.riosense.ui.RioSenseDashboardScreen
 import id.bangsadigital.riosense.ui.components.ControlsTab
@@ -52,6 +53,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var voiceActionExecutor: VoiceActionExecutor
     private lateinit var voiceCommandController: VoiceCommandController
     private lateinit var semanticNluEngine: SemanticNluEngine
+    private lateinit var tripGpsTracker: TripGpsTracker
 
     private var voiceNavState by mutableStateOf<VoiceDashboardNavigation?>(null)
 
@@ -89,6 +91,9 @@ class MainActivity : ComponentActivity() {
         }
         voiceCommandController = VoiceCommandController(applicationContext) { transcript, usedOfflineStt ->
             handleVoiceTranscript(transcript, usedOfflineStt)
+        }
+        tripGpsTracker = TripGpsTracker(applicationContext) { point ->
+            vehicleRepository.recordGpsRoutePoint(point)
         }
 
         // Keep the Head Unit screen awake while the ignition/app is active
@@ -139,6 +144,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // Track offline GPS breadcrumbs automatically while a trip is active and enabled
+            val activeTrip by vehicleRepository.activeTrip.collectAsState()
+            LaunchedEffect(activeTrip != null, telemetry.tripRecordingEnabled) {
+                if (activeTrip != null && telemetry.tripRecordingEnabled) {
+                    tripGpsTracker.startTracking()
+                } else {
+                    tripGpsTracker.stopTracking()
+                }
+            }
+
             // Stream real-time OBD-II TX/RX polling frames into the Activity Log
             LaunchedEffect(Unit) {
                 while (true) {
@@ -185,6 +200,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        tripGpsTracker.stopTracking()
         voiceCommandController.destroy()
         semanticNluEngine.close()
         voiceReminderEngine.shutdown()
@@ -239,7 +255,7 @@ class MainActivity : ComponentActivity() {
 
             val finalCard = baseCard
 
-            if (command !is VoiceCommand.Unknown && !vehicleRepository.telemetry.value.audioAlarmMuted) {
+            if (!finalCard.isError && !vehicleRepository.telemetry.value.audioAlarmMuted) {
                 voiceReminderEngine.playAckChime()
             }
             voiceCommandController.showFeedback(finalCard)

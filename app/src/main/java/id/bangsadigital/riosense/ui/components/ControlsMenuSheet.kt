@@ -55,12 +55,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import id.bangsadigital.riosense.model.ActiveTripState
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.MaintenanceStatus
 import id.bangsadigital.riosense.model.ObdActivityEntry
 import id.bangsadigital.riosense.model.ObdDirection
 import id.bangsadigital.riosense.model.ObdErrorEntry
 import id.bangsadigital.riosense.model.ObdErrorSeverity
+import id.bangsadigital.riosense.model.TripRecord
 import id.bangsadigital.riosense.model.VehicleTelemetry
 import id.bangsadigital.riosense.model.VoiceButtonStyle
 import id.bangsadigital.riosense.model.WelcomeSoundMode
@@ -75,6 +77,7 @@ enum class ControlsTab(val label: String, val subtitle: String) {
     ERROR_LOG("Error Log", "OBD-II detected faults & DTC history"),
     ACTIVITY_LOG("Activity Log", "Real-time OBD-II TX/RX stream & PIDs"),
     SERVICE("Service", "Fast-moving parts & maintenance reminders"),
+    TRIP_HISTORY("Trip History", "GPS route trace, distance & OBD driving stats"),
     SETTINGS("Settings", "Custom alarm thresholds & standard reset")
 }
 
@@ -87,7 +90,13 @@ fun ControlsMenuSheet(
     onWelcomeSoundModeChange: (WelcomeSoundMode) -> Unit,
     onEngineOffVoiceReminderChange: (Boolean) -> Unit,
     onVoiceButtonStyleChange: (VoiceButtonStyle) -> Unit,
+    onTripRecordingEnabledChange: (Boolean) -> Unit,
     initialTab: ControlsTab? = null,
+    tripHistory: List<TripRecord>,
+    activeTrip: ActiveTripState?,
+    onDeleteTrip: (String) -> Unit,
+    onLoadSampleTrips: () -> Unit,
+    onClearTripHistory: () -> Unit,
     errorLogs: List<ObdErrorEntry>,
     activityLogs: List<ObdActivityEntry>,
     isActivityPaused: Boolean,
@@ -117,6 +126,7 @@ fun ControlsMenuSheet(
     var activeSection by remember(initialTab) { mutableStateOf(initialTab) }
     var selectedError by remember { mutableStateOf<ObdErrorEntry?>(null) }
     var selectedActivity by remember { mutableStateOf<ObdActivityEntry?>(null) }
+    var selectedTrip by remember { mutableStateOf<TripRecord?>(null) }
     var selectedServiceId by remember { mutableStateOf<String?>(null) }
     var showAddServiceForm by remember { mutableStateOf(false) }
     var showRecordServiceForm by remember { mutableStateOf(false) }
@@ -136,6 +146,8 @@ fun ControlsMenuSheet(
     val headerTitle = when {
         activeSection == ControlsTab.ERROR_LOG && selectedError != null -> s.errorDetailTitle
         activeSection == ControlsTab.ACTIVITY_LOG && selectedActivity != null -> s.activityDetailTitle
+        activeSection == ControlsTab.TRIP_HISTORY && selectedTrip != null -> s.tripDetailTitle
+        activeSection == ControlsTab.TRIP_HISTORY -> s.tripHistoryTitle
         activeSection == ControlsTab.SERVICE && showAddServiceForm -> s.newPartTitle
         activeSection == ControlsTab.SERVICE && showRecordServiceForm -> s.recordServiceTitle
         activeSection == ControlsTab.SERVICE && selectedServiceId != null -> s.serviceDetailTitle
@@ -149,6 +161,8 @@ fun ControlsMenuSheet(
     val headerSubtitle = when {
         activeSection == ControlsTab.ERROR_LOG && selectedError != null -> selectedError!!.code
         activeSection == ControlsTab.ACTIVITY_LOG && selectedActivity != null -> "PID ${selectedActivity!!.pid}"
+        activeSection == ControlsTab.TRIP_HISTORY && selectedTrip != null -> s.tripDetailSubtitle
+        activeSection == ControlsTab.TRIP_HISTORY -> s.tripHistorySubtitle
         activeSection == ControlsTab.SERVICE && showAddServiceForm -> s.newPartSubtitle
         activeSection == ControlsTab.SERVICE && showRecordServiceForm -> s.recordServiceSubtitle
         activeSection == ControlsTab.SERVICE && selectedServiceId != null -> s.serviceDetailSubtitle
@@ -163,6 +177,7 @@ fun ControlsMenuSheet(
         when {
             activeSection == ControlsTab.ERROR_LOG && selectedError != null -> selectedError = null
             activeSection == ControlsTab.ACTIVITY_LOG && selectedActivity != null -> selectedActivity = null
+            activeSection == ControlsTab.TRIP_HISTORY && selectedTrip != null -> selectedTrip = null
             activeSection == ControlsTab.SERVICE && showAddServiceForm -> showAddServiceForm = false
             activeSection == ControlsTab.SERVICE && showRecordServiceForm -> showRecordServiceForm = false
             activeSection == ControlsTab.SERVICE && selectedServiceId != null -> selectedServiceId = null
@@ -170,6 +185,7 @@ fun ControlsMenuSheet(
                 activeSection = null
                 selectedError = null
                 selectedActivity = null
+                selectedTrip = null
                 selectedServiceId = null
                 showAddServiceForm = false
                 showRecordServiceForm = false
@@ -276,6 +292,19 @@ fun ControlsMenuSheet(
                     )
 
                     ControlsMenuRowItem(
+                        title = s.tripHistoryTitle,
+                        subtitle = s.tripHistorySubtitle,
+                        statusText = if (activeTrip != null) {
+                            s.tripRecordingStatus(String.format("%.1f", activeTrip.distanceKm))
+                        } else {
+                            s.tripCountStatus(tripHistory.size)
+                        },
+                        statusColor = if (activeTrip != null) ObsidianColors.EmeraldNominal else ObsidianColors.DimSilver,
+                        showDivider = true,
+                        onClick = { activeSection = ControlsTab.TRIP_HISTORY }
+                    )
+
+                    ControlsMenuRowItem(
                         title = s.settingsTitle,
                         subtitle = s.settingsSubtitle,
                         statusText = if (telemetry.isCustomAlertSettings) s.statusCustom else s.statusStandard,
@@ -300,6 +329,28 @@ fun ControlsMenuSheet(
                         statusColor = if (isActivityPaused) ObsidianColors.DimSilver else ObsidianColors.EmeraldNominal,
                         showDivider = false,
                         onClick = { activeSection = ControlsTab.ACTIVITY_LOG }
+                    )
+                }
+            }
+
+            ControlsTab.TRIP_HISTORY -> {
+                val detail = selectedTrip
+                if (detail != null) {
+                    TripHistoryDetailView(
+                        trip = detail,
+                        onDelete = {
+                            onDeleteTrip(detail.id)
+                            selectedTrip = null
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                } else {
+                    TripHistoryListView(
+                        trips = tripHistory,
+                        onSelectTrip = { selectedTrip = it },
+                        onLoadSampleTrips = onLoadSampleTrips,
+                        onClearAll = onClearTripHistory,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
@@ -370,6 +421,7 @@ fun ControlsMenuSheet(
                     onWelcomeSoundModeChange = onWelcomeSoundModeChange,
                     onEngineOffVoiceReminderChange = onEngineOffVoiceReminderChange,
                     onVoiceButtonStyleChange = onVoiceButtonStyleChange,
+                    onTripRecordingEnabledChange = onTripRecordingEnabledChange,
                     onSpeedLockThresholdChange = onSpeedLockThresholdChange,
                     onTpmsLowPsiChange = onTpmsLowPsiChange,
                     onTpmsHighPsiChange = onTpmsHighPsiChange,
@@ -1214,6 +1266,7 @@ private fun AlarmSettingsView(
     onWelcomeSoundModeChange: (WelcomeSoundMode) -> Unit,
     onEngineOffVoiceReminderChange: (Boolean) -> Unit,
     onVoiceButtonStyleChange: (VoiceButtonStyle) -> Unit,
+    onTripRecordingEnabledChange: (Boolean) -> Unit,
     onSpeedLockThresholdChange: (Int) -> Unit,
     onTpmsLowPsiChange: (Float) -> Unit,
     onTpmsHighPsiChange: (Float) -> Unit,
@@ -1440,7 +1493,52 @@ private fun AlarmSettingsView(
         }
         SettingsHairlineDivider()
 
-        // 5. Voice Command Offline Pack (flat row: inline status left + Download / Delete pill right)
+        // 5. Trip History GPS Recording Toggle (flat row: On | Off)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = s.tripRecordingLabel,
+                color = ObsidianColors.PureSilver,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f),
+                maxLines = 2
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF0E1015))
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf(true to s.onLabel, false to s.offLabel).forEach { (enabled, label) ->
+                    val selected = telemetry.tripRecordingEnabled == enabled
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                            .clickable { onTripRecordingEnabledChange(enabled) }
+                            .padding(horizontal = 12.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = label,
+                            color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                            fontSize = 10.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+        SettingsHairlineDivider()
+
+        // 6. Voice Command Offline Pack (flat row: inline status left + Download / Delete pill right)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
