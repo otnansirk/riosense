@@ -268,7 +268,7 @@ fun ControlsMenuSheet(
                         },
                         statusColor = when {
                             hasOverdueService -> ObsidianColors.CrimsonAlert
-                            dueServiceItems.isNotEmpty() -> Color(0xFFE6A23C)
+                            dueServiceItems.isNotEmpty() -> ObsidianColors.AmberCaution
                             else -> ObsidianColors.DimSilver
                         },
                         showDivider = true,
@@ -279,7 +279,7 @@ fun ControlsMenuSheet(
                         title = s.settingsTitle,
                         subtitle = s.settingsSubtitle,
                         statusText = if (telemetry.isCustomAlertSettings) s.statusCustom else s.statusStandard,
-                        statusColor = if (telemetry.isCustomAlertSettings) Color(0xFF63B3ED) else ObsidianColors.DimSilver,
+                        statusColor = if (telemetry.isCustomAlertSettings) ObsidianColors.CobaltAccent else ObsidianColors.DimSilver,
                         showDivider = true,
                         onClick = { activeSection = ControlsTab.SETTINGS }
                     )
@@ -297,7 +297,7 @@ fun ControlsMenuSheet(
                         title = s.activityLogTitle,
                         subtitle = s.activityLogSubtitle,
                         statusText = if (isActivityPaused) s.statusPaused else s.statusLive(activityLogs.size),
-                        statusColor = if (isActivityPaused) ObsidianColors.DimSilver else Color(0xFF68D391),
+                        statusColor = if (isActivityPaused) ObsidianColors.DimSilver else ObsidianColors.EmeraldNominal,
                         showDivider = false,
                         onClick = { activeSection = ControlsTab.ACTIVITY_LOG }
                     )
@@ -767,7 +767,7 @@ private fun ActivityLogListView(
             ) {
                 items(entries, key = { it.id }) { item ->
                     val isTx = item.direction == ObdDirection.TX
-                    val dirColor = if (isTx) Color(0xFF63B3ED) else Color(0xFF68D391)
+                    val dirColor = if (isTx) ObsidianColors.CobaltAccent else ObsidianColors.EmeraldNominal
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -847,7 +847,7 @@ private fun ActivityLogDetailView(
     modifier: Modifier = Modifier
 ) {
     val isTx = entry.direction == ObdDirection.TX
-    val dirColor = if (isTx) Color(0xFF63B3ED) else Color(0xFF68D391)
+    val dirColor = if (isTx) ObsidianColors.CobaltAccent else ObsidianColors.EmeraldNominal
 
     Column(
         modifier = modifier
@@ -957,7 +957,7 @@ private fun DetailMetaRow(
 
 private fun severityColor(severity: ObdErrorSeverity): Color = when (severity) {
     ObdErrorSeverity.CRITICAL -> ObsidianColors.CrimsonAlert
-    ObdErrorSeverity.WARNING -> Color(0xFFE6A23C)
+    ObdErrorSeverity.WARNING -> ObsidianColors.AmberCaution
     ObdErrorSeverity.INFO -> ObsidianColors.MutedSilver
 }
 
@@ -1460,7 +1460,7 @@ private fun AlarmSettingsView(
                 )
                 Text(
                     text = offlinePackStatus,
-                    color = if (offlinePackReady) Color(0xFF68D391) else ObsidianColors.DimSilver,
+                    color = if (offlinePackReady) ObsidianColors.EmeraldNominal else ObsidianColors.DimSilver,
                     fontSize = 10.sp,
                     maxLines = 2
                 )
@@ -1470,7 +1470,7 @@ private fun AlarmSettingsView(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF261317))
+                        .background(ObsidianColors.CrimsonSurface)
                         .clickable { showDeleteConfirm = true }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     contentAlignment = Alignment.Center
@@ -1502,7 +1502,7 @@ private fun AlarmSettingsView(
                 ) {
                     Text(
                         text = s.voiceSttDownloadBtn,
-                        color = Color(0xFF63B3ED),
+                        color = ObsidianColors.CobaltAccent,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -1561,8 +1561,8 @@ private fun AlarmSettingsView(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF0E1016))
-                .border(1.dp, Color(0xFF1E232E), RoundedCornerShape(12.dp))
+                .background(ObsidianColors.ObsidianPanel)
+                .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(12.dp))
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -1578,7 +1578,7 @@ private fun AlarmSettingsView(
                     } else {
                         s.standardDefaultsActive
                     },
-                    color = if (telemetry.isCustomAlertSettings) Color(0xFF63B3ED) else ObsidianColors.DimSilver,
+                    color = if (telemetry.isCustomAlertSettings) ObsidianColors.CobaltAccent else ObsidianColors.DimSilver,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -1686,7 +1686,7 @@ private fun SettingsHairlineDivider() {
         modifier = Modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(Color(0xFF1A1E26))
+            .background(ObsidianColors.ObsidianHairline)
     )
 }
 
@@ -1699,8 +1699,8 @@ private fun SettingsGroupSection(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF12151C))
-            .border(1.dp, Color(0xFF212733), RoundedCornerShape(10.dp))
+            .background(ObsidianColors.ObsidianSubPanel)
+            .border(1.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(10.dp))
             .padding(horizontal = 11.dp, vertical = 9.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {

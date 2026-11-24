@@ -1,13 +1,20 @@
 package id.bangsadigital.riosense.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -57,7 +64,10 @@ import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.MaintenanceStatus
 import id.bangsadigital.riosense.model.VehicleTelemetry
 import id.bangsadigital.riosense.model.VoiceButtonStyle
+import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import id.bangsadigital.riosense.ui.components.ControlsMenuSheet
 import id.bangsadigital.riosense.ui.components.ControlsTab
 import id.bangsadigital.riosense.ui.components.KiaRioInteractiveStage
@@ -200,15 +210,16 @@ fun RioSenseDashboardScreen(
             )
         }
 
-        // 3b. FLOATING OBSIDIAN VOICE COMMAND OVERLAY (Listening Indicator & Feedback Card)
+        // 3b. FLOATING OBSIDIAN VOICE COMMAND OVERLAY (Frequency Wave raised cleanly above bottom bar; Feedback Card at bottom)
         if (voiceUiState.isListening || voiceUiState.feedbackCard != null) {
+            val bottomOffset = if (voiceUiState.isListening) 86.dp else 46.dp
             VoiceCommandFloatingOverlay(
                 voiceUiState = voiceUiState,
                 onStopListening = onToggleVoiceListening,
                 onDismissCard = onDismissVoiceFeedback,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 46.dp)
+                    .padding(bottom = bottomOffset)
             )
         }
 
@@ -362,7 +373,7 @@ private fun TopObsidianBar(
                         modifier = Modifier
                             .size(5.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF63B3ED))
+                            .background(ObsidianColors.CobaltAccent)
                     )
                     Text(
                         text = s.simulator,
@@ -427,10 +438,10 @@ private fun TopObsidianBar(
                     modifier = Modifier
                         .size(28.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (isVoiceListening) Color(0xFF152536) else Color(0xFF0E1014))
+                        .background(if (isVoiceListening) ObsidianColors.CobaltSurface else Color(0xFF0E1014))
                         .then(
                             if (isVoiceListening) {
-                                Modifier.border(0.9.dp, Color(0xFF63B3ED), RoundedCornerShape(8.dp))
+                                Modifier.border(0.9.dp, ObsidianColors.CobaltAccent.copy(alpha = 0.85f), RoundedCornerShape(8.dp))
                             } else {
                                 Modifier
                             }
@@ -439,7 +450,7 @@ private fun TopObsidianBar(
                     contentAlignment = Alignment.Center
                 ) {
                     MicrophoneVectorIcon(
-                        tint = if (isVoiceListening) Color(0xFF63B3ED) else ObsidianColors.MutedSilver,
+                        tint = if (isVoiceListening) ObsidianColors.CobaltAccent else ObsidianColors.MutedSilver,
                         modifier = Modifier.size(13.dp)
                     )
                 }
@@ -474,7 +485,7 @@ private fun TopObsidianBar(
                         modifier = Modifier
                             .size(5.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFFE6A23C))
+                            .background(ObsidianColors.AmberCaution)
                     )
                 }
                 Text(
@@ -534,7 +545,7 @@ private fun BottomAlertBanner(
     val dotColor = when {
         hasAlert -> ObsidianColors.CrimsonAlert
         hasServiceReminder && hasOverdueService -> ObsidianColors.CrimsonAlert
-        hasServiceReminder -> Color(0xFFE6A23C)
+        hasServiceReminder -> ObsidianColors.AmberCaution
         else -> Color(0xFF4C5260)
     }
 
@@ -609,7 +620,7 @@ private fun BottomAlertBanner(
             ) {
                 Text(
                     text = s.serviceBtn,
-                    color = Color(0xFFE6A23C),
+                    color = ObsidianColors.AmberCaution,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -625,48 +636,17 @@ private fun VoiceCommandFloatingOverlay(
     onDismissCard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isId = LocalAppLanguage.current == AppLanguage.ID
-
     if (voiceUiState.isListening) {
-        Row(
+        ObsidianFrequencyVisualizer(
+            audioLevel = voiceUiState.audioLevel,
+            onStopListening = onStopListening,
             modifier = modifier
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xF011161F))
-                .border(0.9.dp, Color(0xFF63B3ED).copy(alpha = 0.65f), RoundedCornerShape(14.dp))
-                .clickable { onStopListening() }
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF63B3ED))
-            )
-            Column {
-                Text(
-                    text = if (isId) "Mendengarkan..." else "Listening...",
-                    color = Color(0xFF63B3ED),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                if (voiceUiState.partialTranscript.isNotBlank()) {
-                    Text(
-                        text = "\"${voiceUiState.partialTranscript}\"",
-                        color = ObsidianColors.PureSilver,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
+        )
         return
     }
 
     val card = voiceUiState.feedbackCard ?: return
-    val accent = if (card.isError) ObsidianColors.CrimsonAlert else Color(0xFF68D391)
+    val accent = if (card.isError) ObsidianColors.CrimsonAlert else ObsidianColors.EmeraldNominal
 
     Column(
         modifier = modifier
@@ -706,6 +686,110 @@ private fun VoiceCommandFloatingOverlay(
                 color = ObsidianColors.DimSilver,
                 fontSize = 10.sp
             )
+        }
+    }
+}
+
+/**
+ * Borderless luxury automotive HUD audio frequency visualizer.
+ * Reacts smoothly in real time to microphone RMS level with multi-harmonic motion,
+ * zero text clutter, and zero heavy box borders.
+ */
+@Composable
+private fun ObsidianFrequencyVisualizer(
+    audioLevel: Float,
+    onStopListening: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val smoothLevel by animateFloatAsState(
+        targetValue = audioLevel.coerceIn(0f, 1f),
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "voiceFreqLevel"
+    )
+
+    val infiniteTransition = rememberInfiniteTransition(label = "voiceFreqWave")
+    val phase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2.0 * PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1250, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "voiceFreqPhase"
+    )
+
+    Box(
+        modifier = modifier
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            ) { onStopListening() }
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(
+            modifier = Modifier
+                .width(154.dp)
+                .height(42.dp)
+        ) {
+            val barCount = 15
+            val centerIdx = (barCount - 1) / 2f
+            val barWidth = 3.2.dp.toPx()
+            val totalBarsWidth = barCount * barWidth
+            val gap = (size.width - totalBarsWidth) / (barCount - 1)
+            val centerY = size.height * 0.5f
+
+            // Soft borderless ambient cobalt glow beneath the wave
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        ObsidianColors.CobaltAccent.copy(alpha = 0.16f + smoothLevel * 0.18f),
+                        Color.Transparent
+                    ),
+                    center = Offset(size.width * 0.5f, centerY),
+                    radius = size.width * 0.48f
+                ),
+                radius = size.width * 0.48f,
+                center = Offset(size.width * 0.5f, centerY)
+            )
+
+            for (i in 0 until barCount) {
+                val distFromCenter = abs(i - centerIdx) / centerIdx // 0.0 at center -> 1.0 at edges
+                val bellEnvelope = (1f - distFromCenter * distFromCenter * 0.78f).coerceIn(0.22f, 1f)
+
+                // Multi-harmonic wave for organic, non-robotic cadence
+                val h1 = sin(phase * 1.0f + i * 0.62f)
+                val h2 = sin(phase * 2.0f - i * 0.95f) * 0.45f
+                val waveNorm = ((h1 + h2) * 0.35f + 0.5f).coerceIn(0.12f, 1f)
+
+                val minH = size.height * 0.14f
+                val idleAmp = size.height * 0.34f * bellEnvelope * waveNorm
+                val voiceBoost = size.height * 0.62f * bellEnvelope * smoothLevel * (0.45f + 0.55f * waveNorm)
+                val barHeight = (minH + idleAmp + voiceBoost).coerceIn(minH, size.height * 0.94f)
+
+                val x = i * (barWidth + gap) + barWidth * 0.5f
+                val topY = centerY - barHeight * 0.5f
+                val bottomY = centerY + barHeight * 0.5f
+
+                val barColor = if (distFromCenter < 0.38f) {
+                    ObsidianColors.CobaltAccent.copy(alpha = 0.85f + smoothLevel * 0.15f)
+                } else if (distFromCenter < 0.72f) {
+                    ObsidianColors.PureSilver.copy(alpha = 0.72f + smoothLevel * 0.22f)
+                } else {
+                    ObsidianColors.MutedSilver.copy(alpha = 0.42f + smoothLevel * 0.30f)
+                }
+
+                drawLine(
+                    color = barColor,
+                    start = Offset(x, topY),
+                    end = Offset(x, bottomY),
+                    strokeWidth = barWidth,
+                    cap = StrokeCap.Round
+                )
+            }
         }
     }
 }
@@ -751,7 +835,7 @@ private fun FloatingGlassMicButton(
 
         val glassBgBrush = if (isListening) {
             Brush.verticalGradient(
-                colors = listOf(Color(0xDE193B5A), Color(0xCC0E2236))
+                colors = listOf(ObsidianColors.CobaltGlassTop, ObsidianColors.CobaltGlassBottom)
             )
         } else if (isDragging) {
             Brush.verticalGradient(
@@ -765,7 +849,10 @@ private fun FloatingGlassMicButton(
 
         val glassRimBrush = if (isListening) {
             Brush.verticalGradient(
-                colors = listOf(Color(0xEB63B3ED), Color(0x8863B3ED))
+                colors = listOf(
+                    ObsidianColors.CobaltAccent.copy(alpha = 0.88f),
+                    ObsidianColors.CobaltAccent.copy(alpha = 0.45f)
+                )
             )
         } else {
             Brush.verticalGradient(
@@ -821,14 +908,18 @@ private fun FloatingGlassMicButton(
                     )
                     .border(
                         width = 0.7.dp,
-                        color = if (isListening) Color(0x8863B3ED) else Color.White.copy(alpha = 0.18f),
+                        color = if (isListening) {
+                            ObsidianColors.CobaltAccent.copy(alpha = 0.55f)
+                        } else {
+                            Color.White.copy(alpha = 0.18f)
+                        },
                         shape = RoundedCornerShape(11.dp)
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 MicrophoneVectorIcon(
                     tint = if (isListening) {
-                        Color(0xFF63B3ED)
+                        ObsidianColors.CobaltAccent
                     } else {
                         ObsidianColors.PureSilver.copy(alpha = 0.94f)
                     },

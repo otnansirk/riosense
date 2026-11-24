@@ -28,6 +28,7 @@ data class VoiceFeedbackCard(
 data class VoiceUiState(
     val isListening: Boolean = false,
     val partialTranscript: String = "",
+    val audioLevel: Float = 0f,
     val feedbackCard: VoiceFeedbackCard? = null
 )
 
@@ -135,6 +136,7 @@ class VoiceCommandController(
             it.copy(
                 isListening = true,
                 partialTranscript = "",
+                audioLevel = 0f,
                 feedbackCard = null
             )
         }
@@ -224,11 +226,14 @@ class VoiceCommandController(
                 }
 
                 override fun onBeginningOfSpeech() = Unit
-                override fun onRmsChanged(rmsdB: Float) = Unit
+                override fun onRmsChanged(rmsdB: Float) {
+                    val normalized = ((rmsdB + 2.0f) / 11.0f).coerceIn(0f, 1f)
+                    _uiState.update { it.copy(audioLevel = normalized) }
+                }
                 override fun onBufferReceived(buffer: ByteArray?) = Unit
 
                 override fun onEndOfSpeech() {
-                    _uiState.update { it.copy(isListening = false) }
+                    _uiState.update { it.copy(isListening = false, audioLevel = 0f) }
                 }
 
                 override fun onError(error: Int) {
