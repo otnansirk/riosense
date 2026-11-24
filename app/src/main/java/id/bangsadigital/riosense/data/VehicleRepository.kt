@@ -310,7 +310,7 @@ class VehicleRepository(context: Context? = null) {
                     rxHeader = "7E8 (ECM)",
                     rxFrame = formatCoolantFrame(state.coolantTempC),
                     quickValue = "${state.coolantTempC} °C",
-                    decodedDetail = "Engine coolant temperature ${state.coolantTempC} °C (${if (state.isCoolantOverheat) "OVERHEAT" else "Nominal"})",
+                    decodedDetail = "Engine coolant temperature ${state.coolantTempC} °C (${if (state.isCoolantOverheat) "OVERHEAT" else "Normal"})",
                     formula = "Byte A - 40 (°C)",
                     source = src
                 )

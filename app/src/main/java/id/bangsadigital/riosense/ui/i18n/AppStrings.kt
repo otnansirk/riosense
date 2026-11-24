@@ -185,7 +185,7 @@ private val EnglishStrings = AppStrings(
     minimize = "Minimize",
     dismiss = "Dismiss",
     serviceBtn = "Service",
-    allSystemsNominal = "All systems nominal",
+    allSystemsNominal = "All systems normal",
     serviceReminderPrefix = "SERVICE REMINDER",
     moreSuffix = { n -> " +$n more" },
 

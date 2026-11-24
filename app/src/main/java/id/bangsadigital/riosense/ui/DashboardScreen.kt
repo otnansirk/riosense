@@ -646,35 +646,23 @@ private fun VoiceCommandFloatingOverlay(
     }
 
     val card = voiceUiState.feedbackCard ?: return
-    val accent = if (card.isError) ObsidianColors.CrimsonAlert else ObsidianColors.EmeraldNominal
 
     Column(
         modifier = modifier
-            .fillMaxWidth(0.56f)
+            .fillMaxWidth(0.52f)
             .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xF2101319))
-            .border(0.8.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
+            .background(Color(0xEB11141B))
+            .border(0.8.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(14.dp))
             .clickable { onDismissCard() }
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 11.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(accent)
-            )
-            Text(
-                text = card.title,
-                color = ObsidianColors.PureSilver,
-                fontSize = 11.5.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
+        Text(
+            text = card.title,
+            color = if (card.isError) ObsidianColors.CrimsonAlert else ObsidianColors.EmeraldNominal,
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.SemiBold
+        )
         Text(
             text = card.subtitle,
             color = if (card.isError) ObsidianColors.MutedSilver else ObsidianColors.PureSilver,

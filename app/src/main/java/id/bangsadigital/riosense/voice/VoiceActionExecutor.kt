@@ -229,7 +229,7 @@ class VoiceActionExecutor(
                     if (telemetry.isCoolantOverheat) {
                         if (isId) "OVERHEAT" else "OVERHEAT"
                     } else {
-                        if (isId) "Normal" else "Nominal"
+                        if (isId) "Normal" else "Normal"
                     }
                 }",
                 isError = telemetry.isCoolantOverheat
@@ -241,7 +241,7 @@ class VoiceActionExecutor(
                     if (telemetry.isBatteryAlert) {
                         if (isId) "Perlu Dicek" else "Warning"
                     } else {
-                        if (isId) "Normal" else "Nominal"
+                        if (isId) "Normal" else "Normal"
                     }
                 }",
                 isError = telemetry.isBatteryAlert
@@ -252,7 +252,7 @@ class VoiceActionExecutor(
                 VoiceFeedbackCard(
                     title = if (isId) "Status Ban (TPMS)" else "Tire Status (TPMS)",
                     subtitle = if (telemetry.alertTires.isEmpty()) {
-                        if (isId) "Semua ban normal" else "All tires nominal"
+                        if (isId) "Semua ban normal" else "All tires normal"
                     } else {
                         if (isId) "${telemetry.alertTires.size} ban perlu perhatian" else "${telemetry.alertTires.size} tire alert(s)"
                     },
@@ -305,7 +305,7 @@ class VoiceActionExecutor(
                     subtitle = if (telemetry.hasAnyCriticalAlert) {
                         if (isId) "Ada peringatan aktif" else "Active alerts present"
                     } else {
-                        if (isId) "Semua sistem normal" else "All systems nominal"
+                        if (isId) "Semua sistem normal" else "All systems normal"
                     },
                     detailLines = listOf(
                         "Coolant ${telemetry.coolantTempC}°C  ·  ${if (isId) "Aki" else "Battery"} ${String.format("%.1f", telemetry.batteryVoltage)}V  ·  $doorStateText",

@@ -110,7 +110,7 @@ fun SimulatorAndSettingsSheet(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "All Nominal",
+                    text = "All Normal",
                     color = ObsidianColors.PureSilver,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium

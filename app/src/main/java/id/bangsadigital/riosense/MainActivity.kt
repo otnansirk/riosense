@@ -237,24 +237,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            val metaParts = buildList {
-                add(if (usedOfflineStt) "Offline STT" else "Online STT")
-                if (parsed.matchedByAi && command !is VoiceCommand.Unknown) {
-                    val pct = (parsed.confidence * 100).toInt().coerceIn(0, 100)
-                    add("Semantic AI $pct% (${parsed.inferenceMs}ms)")
-                }
-            }
-            val finalCard = if (command !is VoiceCommand.Unknown) {
-                val extraLines = buildList {
-                    add("\"$transcript\"")
-                    add(metaParts.joinToString(" · "))
-                }
-                baseCard.copy(
-                    detailLines = baseCard.detailLines + extraLines
-                )
-            } else {
-                baseCard
-            }
+            val finalCard = baseCard
 
             if (command !is VoiceCommand.Unknown && !vehicleRepository.telemetry.value.audioAlarmMuted) {
                 voiceReminderEngine.playAckChime()
