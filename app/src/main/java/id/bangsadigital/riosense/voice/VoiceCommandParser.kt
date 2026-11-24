@@ -8,7 +8,12 @@ enum class VolumeAction { UP, DOWN, MUTE }
 enum class StatusTopic { OVERVIEW, COOLANT, BATTERY, TIRES, SERVICE, ERRORS }
 
 sealed interface VoiceCommand {
-    data class NavigateMaps(val query: String, val isSearchOnly: Boolean = false) : VoiceCommand
+    data class NavigateMaps(
+        val query: String,
+        val isSearchOnly: Boolean = false,
+        val waypoint: String? = null,
+        val avoidTolls: Boolean = false
+    ) : VoiceCommand
     data object OpenMaps : VoiceCommand
     data class PlaySpotify(val query: String, val isPlaylist: Boolean = false) : VoiceCommand
     data object OpenSpotify : VoiceCommand
@@ -440,64 +445,105 @@ object VoiceCommandParser {
 
     private fun parseMapsCommand(text: String): VoiceCommand? {
         if (containsAny(text, "buka maps", "buka google maps", "open maps", "open google maps") &&
-            !containsAny(text, " ke ", " cari ", " to ", " search ", " find ")
+            !containsAny(text, " ke ", " menuju ", " cari", " to ", " search", " find")
         ) {
             return VoiceCommand.OpenMaps
         }
 
-        val navTriggers = listOf(
-            "arahkan ke ",
-            "arahin ke ",
-            "navigasi ke ",
-            "navigate to ",
-            "directions to ",
-            "take me to ",
-            "rute ke ",
-            "jalan ke ",
-            "pergi ke ",
-            "buka maps ke ",
-            "buka google maps ke "
+        // 1. Universal Navigation patterns (ID + EN):
+        //    e.g. "rute ke mall pakuwon jogja", "rute tercepat ke bandara yia",
+        //    "ayo jalan ke coffie merapi", "ayo kita ke merapi view dengan rute tercepat",
+        //    "arah ke madiun via tol", "arah ke ponorogo via wonogiri", "mau ke solo"
+        val navRegexes = listOf(
+            Regex("\\b(?:arahkan|arahin|arah|navigasi|rute(?:\\s+(?:tercepat|terdekat|cepat|alternatif))?|jalan|pergi|berangkat|antar(?:kan|in)?|tunjukkan\\s+jalan|buka\\s+(?:google\\s+)?maps|ayo(?:\\s+kita)?|yuk(?:\\s+kita)?|kita|mau|gas|otw)\\s+(?:ke|menuju)\\s+(.+)$"),
+            Regex("\\bmenuju\\s+(?:ke\\s+)?(.+)$"),
+            Regex("\\b(?:navigate|directions|fastest\\s+route|route|drive|go|take\\s+me|head|let'?s\\s+go)\\s+to\\s+(.+)$")
         )
-        for (trigger in navTriggers) {
-            if (text.contains(trigger)) {
-                val dest = text.substringAfter(trigger).trim()
-                if (dest.isNotEmpty()) {
-                    return VoiceCommand.NavigateMaps(query = dest, isSearchOnly = false)
+        for (regex in navRegexes) {
+            val rawDest = regex.find(text)?.groupValues?.getOrNull(1)?.trim()
+            if (!rawDest.isNullOrEmpty()) {
+                val parsed = parseDestinationModifiers(rawDest)
+                if (parsed.destination.isNotEmpty()) {
+                    return VoiceCommand.NavigateMaps(
+                        query = parsed.destination,
+                        isSearchOnly = false,
+                        waypoint = parsed.waypoint,
+                        avoidTolls = parsed.avoidTolls
+                    )
                 }
             }
         }
 
-        val searchTriggers = listOf(
-            "carikan lokasi ",
-            "cari lokasi ",
-            "carikan tempat ",
-            "cari tempat ",
-            "cari di maps ",
-            "search maps ",
-            "find nearby ",
-            "cari spbu",
-            "cari pom bensin",
-            "cari bengkel",
-            "cari restoran",
-            "cari kafe",
-            "cari masjid",
-            "cari atm",
-            "cari parkir"
+        // 2. Universal Place Search patterns (any place, not limited to a hardcoded list):
+        //    e.g. "cari warung nasi pecel terdekat", "cari indomaret terdekat",
+        //    "cariin apotek", "find nearby coffee shop", "indomaret terdekat"
+        val searchRegexes = listOf(
+            Regex("\\b(?:carikan|cariin|cari|temukan)\\s+(?:lokasi\\s+|tempat\\s+|di\\s+(?:google\\s+)?maps\\s+)?(.+)$"),
+            Regex("\\b(?:search\\s+(?:google\\s+)?maps\\s+(?:for\\s+)?|find\\s+(?:me\\s+)?(?:a\\s+)?|locate\\s+)(.+)$"),
+            Regex("\\b(?:di\\s*mana|ada)\\s+(.+?\\s+terdekat)\\b"),
+            Regex("^(.+?\\s+(?:terdekat|di\\s+sekitar\\s+sini|nearby|nearest))$")
         )
-        for (trigger in searchTriggers) {
-            if (text.contains(trigger)) {
-                val query = if (trigger.endsWith(" ")) {
-                    text.substringAfter(trigger).trim()
-                } else {
-                    text.substringAfter("cari ").trim()
+        for (regex in searchRegexes) {
+            val rawQuery = regex.find(text)?.groupValues?.getOrNull(1)?.trim()
+            if (!rawQuery.isNullOrEmpty()) {
+                // Avoid hijacking car-diagnostic or music queries
+                if (containsAny(rawQuery, "lagu", "musik", "song", "music", "playlist", "error", "fault", "dtc")) {
+                    continue
                 }
-                if (query.isNotEmpty()) {
-                    return VoiceCommand.NavigateMaps(query = query, isSearchOnly = true)
+                val cleanQuery = rawQuery
+                    .replace(Regex("\\b(tolong|dong|nih|ya|deh|aja|saja|please|di\\s+maps|di\\s+google\\s+maps)\\b"), " ")
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+                if (cleanQuery.isNotEmpty()) {
+                    return VoiceCommand.NavigateMaps(query = cleanQuery, isSearchOnly = true)
                 }
             }
         }
 
         return null
+    }
+
+    private data class DestinationParts(
+        val destination: String,
+        val waypoint: String?,
+        val avoidTolls: Boolean
+    )
+
+    private fun parseDestinationModifiers(raw: String): DestinationParts {
+        var s = raw
+            .replace(Regex("\\b(dengan|pakai|pake|lewat|menggunakan)\\s+rute\\s+(tercepat|cepat|terdekat)\\b"), " ")
+            .replace(Regex("\\brute\\s+(tercepat|cepat)\\b"), " ")
+            .replace(Regex("\\b(tolong|dong|nih|ya|deh|aja|saja|please)\\b"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        var avoidTolls = false
+        if (Regex("\\b(tanpa\\s+tol|hindari\\s+tol|jangan\\s+lewat\\s+tol|non\\s+tol|avoid\\s+tolls?)\\b").containsMatchIn(s)) {
+            avoidTolls = true
+            s = s.replace(Regex("\\b(tanpa\\s+tol|hindari\\s+tol|jangan\\s+lewat\\s+tol|non\\s+tol|avoid\\s+tolls?)\\b"), " ")
+        }
+
+        // "via tol" / "lewat tol" -> Google Maps defaults to toll routes when fastest, so strip it from the address query
+        s = s.replace(Regex("\\b(via|lewat|melalui)\\s+(jalan\\s+)?tol\\b"), " ")
+
+        // Optional waypoint city/area: e.g. "ponorogo via wonogiri" or "bandung lewat puncak"
+        var waypoint: String? = null
+        val viaMatch = Regex("^(.+?)\\s+(?:via|lewat|melalui)\\s+(.+)$").find(s.trim())
+        if (viaMatch != null) {
+            val destPart = viaMatch.groupValues[1].trim()
+            val wpPart = viaMatch.groupValues[2].trim()
+            if (destPart.isNotEmpty() && wpPart.isNotEmpty()) {
+                s = destPart
+                waypoint = wpPart
+            }
+        }
+
+        val cleanDest = s.replace(Regex("\\s+"), " ").trim()
+        return DestinationParts(
+            destination = cleanDest,
+            waypoint = waypoint,
+            avoidTolls = avoidTolls
+        )
     }
 
     private fun containsAny(text: String, vararg phrases: String): Boolean =

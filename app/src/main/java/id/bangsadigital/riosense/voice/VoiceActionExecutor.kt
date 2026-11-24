@@ -32,14 +32,25 @@ class VoiceActionExecutor(
 
         return when (command) {
             is VoiceCommand.NavigateMaps -> {
-                val ok = launchGoogleMaps(command.query, command.isSearchOnly)
+                val ok = launchGoogleMaps(
+                    query = command.query,
+                    isSearchOnly = command.isSearchOnly,
+                    waypoint = command.waypoint,
+                    avoidTolls = command.avoidTolls
+                )
                 if (ok) {
+                    val viaSuffix = command.waypoint?.let { " (via $it)" }.orEmpty()
+                    val tollSuffix = if (command.avoidTolls) {
+                        if (isId) " · tanpa tol" else " · no tolls"
+                    } else ""
                     VoiceFeedbackCard(
                         title = "Google Maps",
                         subtitle = if (isId) {
-                            if (command.isSearchOnly) "Mencari: ${command.query}" else "Mengarahkan ke: ${command.query}"
+                            if (command.isSearchOnly) "Mencari: ${command.query}"
+                            else "Mengarahkan ke: ${command.query}$viaSuffix$tollSuffix"
                         } else {
-                            if (command.isSearchOnly) "Searching: ${command.query}" else "Navigating to: ${command.query}"
+                            if (command.isSearchOnly) "Searching: ${command.query}"
+                            else "Navigating to: ${command.query}$viaSuffix$tollSuffix"
                         }
                     )
                 } else {
@@ -306,12 +317,21 @@ class VoiceActionExecutor(
         }
     }
 
-    private fun launchGoogleMaps(query: String, isSearchOnly: Boolean): Boolean {
+    private fun launchGoogleMaps(
+        query: String,
+        isSearchOnly: Boolean,
+        waypoint: String? = null,
+        avoidTolls: Boolean = false
+    ): Boolean {
         val encoded = Uri.encode(query)
-        val uri = if (isSearchOnly) {
-            Uri.parse("geo:0,0?q=$encoded")
-        } else {
-            Uri.parse("google.navigation:q=$encoded")
+        val uri = when {
+            isSearchOnly -> Uri.parse("geo:0,0?q=$encoded")
+            !waypoint.isNullOrBlank() -> {
+                val wpEncoded = Uri.encode(waypoint)
+                Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$encoded&waypoints=$wpEncoded&travelmode=driving")
+            }
+            avoidTolls -> Uri.parse("google.navigation:q=$encoded&avoid=t")
+            else -> Uri.parse("google.navigation:q=$encoded")
         }
         val mapsIntent = Intent(Intent.ACTION_VIEW, uri).apply {
             setPackage("com.google.android.apps.maps")
