@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.ColorMatrix
@@ -561,7 +562,7 @@ fun KiaRioInteractiveStage(
 
             // CASE 5: 360° Turntable Mode — Transparent PNG 2°/Frame (180 frames: 000..179)
             else -> {
-                // Neon road-motion backdrop: visible only while Front / 45° Front / Back / 45° Back is the active tab
+                // Neon road-motion backdrop: visible only while Front or Back is the active tab
                 // (hidden for 360° Auto and manual drag since no tab is selected), speed follows OBD speedometer.
                 RoadMotionBackdrop(
                     mode = if (telemetry.roadEffectEnabled) selectedViewMode else null,
@@ -723,8 +724,8 @@ fun KiaRioInteractiveStage(
 }
 
 /**
- * Lightweight perspective neon road drawn behind the car (pure Canvas, zero assets).
- * - Shown only for the 4 position tabs (Front, 45° Front, Back, 45° Back).
+ * Lightweight perspective neon road drawn behind the car (pure Canvas).
+ * - Shown only for the Front and Back tabs.
  * - Marking flow speed follows [speedKmh]; at 0 km/h the road is static and the frame loop is stopped (0% CPU).
  */
 @Composable
@@ -733,8 +734,7 @@ private fun RoadMotionBackdrop(
     speedKmh: Int,
     modifier: Modifier = Modifier
 ) {
-    val active = mode == CarViewMode.FRONT || mode == CarViewMode.FRONT_45 ||
-        mode == CarViewMode.BACK || mode == CarViewMode.BACK_45
+    val active = mode == CarViewMode.FRONT || mode == CarViewMode.BACK
     var lastMode by remember { mutableStateOf(CarViewMode.FRONT_45) }
     if (mode != null && active) lastMode = mode
 
@@ -780,7 +780,7 @@ private fun RoadMotionBackdrop(
         val b = Offset(bx * w, by * h)
         fun pt(s: Float) = Offset(v.x + (b.x - v.x) * s, v.y + (b.y - v.y) * s)
 
-        val halfW = w * 0.31f
+        val halfW = w * 0.42f
         val cobalt = ObsidianColors.CobaltAccent
         val ph = phase
         val k = (speedState.value / 120f).coerceIn(0f, 1f)
@@ -794,8 +794,8 @@ private fun RoadMotionBackdrop(
                 val a = (s1 * 0.9f) * fade
                 val p0 = pt(s0) + Offset(side * halfW * s0, 0f)
                 val p1 = pt(s1) + Offset(side * halfW * s1, 0f)
-                drawLine(cobalt.copy(alpha = a * 0.22f), p0, p1, strokeWidth = (3f + 14f * s1).dp.toPx() * 0.6f)
-                drawLine(cobalt.copy(alpha = a), p0, p1, strokeWidth = (1f + 4.5f * s1).dp.toPx())
+                drawLine(cobalt.copy(alpha = a * 0.22f), p0, p1, strokeWidth = (4f + 16f * s1).dp.toPx() * 0.7f)
+                drawLine(cobalt.copy(alpha = a), p0, p1, strokeWidth = (2f + 6.5f * s1).dp.toPx())
             }
         }
 
@@ -821,20 +821,28 @@ private fun RoadMotionBackdrop(
         }
 
         // Lane dividers (thick tapered dashes) flowing with the phase
-        val dashCount = 6
+        val dashCount = 5
         for (i in 0 until dashCount) {
             val u = (i + ph * 1f) / dashCount
-            dash(-0.5f, u, 0.10f, Color.White, w * 0.017f, 0.85f)
-            dash(0.5f, u, 0.10f, Color.White, w * 0.017f, 0.85f)
+            dash(-0.5f, u, 0.16f, Color.White, w * 0.033f, 0.87f)
+            dash(0.5f, u, 0.16f, Color.White, w * 0.033f, 0.87f)
+        }
+
+        // Central lane marking in the middle of the road (smaller than lane dividers,
+        // flows with the phase and follows the speed effect like the rest of the road)
+        val centerCount = 9
+        for (i in 0 until centerCount) {
+            val u = (i + ph * (0.8f + 0.9f * k)) / centerCount
+            dash(0f, u, 0.20f, Color.White, w * 0.028f, 0.9f)
         }
 
         // Speed streaks on the outer sides: only while moving, longer & brighter as speed rises
         if (k > 0f) {
             for (i in 0 until 5) {
                 val u = (i * 0.2f) + ph * 1.35f + i * 0.07f
-                val len = 0.06f + 0.14f * k
-                dash(-1.7f, u, len, cobalt, w * 0.010f, 0.25f + 0.65f * k)
-                dash(1.7f, u + 0.11f, len, cobalt, w * 0.010f, 0.25f + 0.65f * k)
+                val len = 0.10f + 0.22f * k
+                dash(-1.7f, u, len, cobalt, w * 0.022f, 0.25f + 0.65f * k)
+                dash(1.7f, u + 0.11f, len, cobalt, w * 0.022f, 0.25f + 0.65f * k)
             }
         }
     }
