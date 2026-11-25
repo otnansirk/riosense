@@ -130,6 +130,24 @@ data class MaintenanceState(
         const val DEFAULT_REMIND_KM_BEFORE = 500
 
         /**
+         * Returns the authoritative Kia Indonesia / Kia Rio UB (1.4L Gamma 6MT) standard preset
+         * `(intervalMonths, intervalKm)` for a given part ID, based on official 10k / 20k / 40k km
+         * service milestones for tropical Indonesian driving conditions.
+         */
+        fun standardScheduleFor(itemId: String): Pair<Int, Int> = when (itemId) {
+            "engine_oil" -> 6 to 10_000
+            "tire_rotation" -> 6 to 10_000
+            "air_cabin_filter" -> 12 to 20_000
+            "ac_service" -> 12 to 20_000
+            "coolant" -> 24 to 40_000
+            "battery" -> 24 to 0
+            "tires" -> 48 to 50_000
+            "brake_pads" -> 24 to 40_000
+            "trans_oil_plugs" -> 24 to 40_000
+            else -> 12 to 10_000
+        }
+
+        /**
          * Recommended Kia Rio UB (2012–2016) fast-moving maintenance schedule.
          */
         fun defaultKiaRioItems(
@@ -182,9 +200,9 @@ data class MaintenanceState(
                     name = "Engine Oil & Filter",
                     category = "Engine",
                     dateMs = monthsAgo(5, 25),
-                    odoKm = baseOdometerKm - 4650,
+                    odoKm = baseOdometerKm - 9650,
                     intervalMonths = 6,
-                    intervalKm = 5000,
+                    intervalKm = 10000,
                     sampleCostIdr = 550_000L,
                     sampleNote = "Shell Helix HX7 10W-40 + OEM Oil Filter"
                 ),
@@ -195,7 +213,7 @@ data class MaintenanceState(
                     dateMs = monthsAgo(6),
                     odoKm = baseOdometerKm - 5200,
                     intervalMonths = 12,
-                    intervalKm = 15000,
+                    intervalKm = 20000,
                     sampleCostIdr = 220_000L,
                     sampleNote = "OEM Air Filter + Carbon Cabin Filter"
                 ),
@@ -233,13 +251,24 @@ data class MaintenanceState(
                     sampleNote = "GS Astra MF NS60L"
                 ),
                 buildItem(
+                    id = "tire_rotation",
+                    name = "Tire Rotation, Spooring & Balancing",
+                    category = "Tires / Alignment",
+                    dateMs = monthsAgo(4, 10),
+                    odoKm = baseOdometerKm - 4200,
+                    intervalMonths = 6,
+                    intervalKm = 10000,
+                    sampleCostIdr = 250_000L,
+                    sampleNote = "FWD cross rotation + 4-wheel balancing & 3D spooring"
+                ),
+                buildItem(
                     id = "tires",
                     name = "Tires (Replacement)",
                     category = "Tires",
                     dateMs = monthsAgo(18),
                     odoKm = baseOdometerKm - 18000,
                     intervalMonths = 48,
-                    intervalKm = 45000,
+                    intervalKm = 50000,
                     sampleCostIdr = 3_200_000L,
                     sampleNote = "4x Bridgestone Turanza 195/55 R16"
                 ),
@@ -250,7 +279,7 @@ data class MaintenanceState(
                     dateMs = monthsAgo(10),
                     odoKm = baseOdometerKm - 10000,
                     intervalMonths = 24,
-                    intervalKm = 35000,
+                    intervalKm = 40000,
                     sampleCostIdr = 650_000L,
                     sampleNote = "Bendix Front Pads + DOT 4 Brake Fluid"
                 ),

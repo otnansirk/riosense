@@ -52,6 +52,7 @@ class RioSensePreferences(context: Context) {
         private const val KEY_REMIND_DAYS = "maintenance_remind_days"
         private const val KEY_REMIND_KM = "maintenance_remind_km"
         private const val KEY_MAINTENANCE_ITEMS = "maintenance_items_json"
+        private const val KEY_MAINTENANCE_STD_V2 = "maintenance_std_presets_v4"
     }
 
     private val appContext = context.applicationContext
@@ -179,8 +180,36 @@ class RioSensePreferences(context: Context) {
             saveMaintenanceState(initialState)
             defaults
         } else {
-            parseItemsJson(rawJson).ifEmpty {
+            val parsed = parseItemsJson(rawJson).ifEmpty {
                 MaintenanceState.defaultKiaRioItems(baseOdometerKm = odometer)
+            }
+            val withRotation = if (parsed.none { it.id == "tire_rotation" }) {
+                val defaultRotation = MaintenanceState.defaultKiaRioItems(baseOdometerKm = odometer)
+                    .firstOrNull { it.id == "tire_rotation" }
+                if (defaultRotation != null) parsed + defaultRotation else parsed
+            } else {
+                parsed
+            }
+            if (!prefs.getBoolean(KEY_MAINTENANCE_STD_V2, false)) {
+                val upgraded = withRotation.map { item ->
+                    if (item.isCustom) item
+                    else {
+                        val (stdM, stdKm) = MaintenanceState.standardScheduleFor(item.id)
+                        item.copy(intervalMonths = stdM, intervalKm = stdKm)
+                    }
+                }
+                prefs.edit().putBoolean(KEY_MAINTENANCE_STD_V2, true).apply()
+                saveMaintenanceState(
+                    MaintenanceState(
+                        currentOdometerKm = odometer,
+                        remindDaysBefore = remindDays,
+                        remindKmBefore = remindKm,
+                        items = upgraded
+                    )
+                )
+                upgraded
+            } else {
+                withRotation
             }
         }
 

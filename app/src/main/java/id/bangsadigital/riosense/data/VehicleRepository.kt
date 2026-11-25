@@ -108,6 +108,7 @@ class VehicleRepository(context: Context? = null) {
     val activeTrip: StateFlow<ActiveTripState?> = _activeTrip.asStateFlow()
 
     private var simGpsStep = 0
+    private var odometerFractionKm = 0f
 
     init {
         seedInitialObdLogs()
@@ -943,6 +944,14 @@ class VehicleRepository(context: Context? = null) {
         )
 
         val deltaKm = (state.speedKmh / 3600f) * deltaSec
+        if (deltaKm > 0f) {
+            odometerFractionKm += deltaKm
+            if (odometerFractionKm >= 1.0f) {
+                val wholeKm = odometerFractionKm.toInt()
+                odometerFractionKm -= wholeKm
+                _maintenance.update { it.copy(currentOdometerKm = it.currentOdometerKm + wholeKm) }
+            }
+        }
         val isIdle = state.speedKmh <= 2
         // Realistic Kia Rio 1.4L Gamma fuel burn estimate (L/s): ~0.8 L/h idle, ~6.5-8.5 L/100km cruising
         val fuelRateLph = if (isIdle) 0.85f else (2.4f + (state.rpm / 1000f) * 1.45f)
@@ -1009,6 +1018,7 @@ class VehicleRepository(context: Context? = null) {
             prefs?.saveTripHistory(updated)
             updated
         }
+        prefs?.saveMaintenanceState(_maintenance.value)
     }
 
     /**
