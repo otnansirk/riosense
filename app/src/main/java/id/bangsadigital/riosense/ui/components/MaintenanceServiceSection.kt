@@ -147,7 +147,6 @@ fun MaintenanceServiceTabContent(
                 onRemindDaysChange = onRemindDaysChange,
                 onRemindKmChange = onRemindKmChange,
                 onOpenAddForm = { onShowAddFormChange(true) },
-                onResetStandard = onResetStandard,
                 modifier = modifier
             )
         }
@@ -162,7 +161,6 @@ private fun MaintenanceListView(
     onRemindDaysChange: (Int) -> Unit,
     onRemindKmChange: (Int) -> Unit,
     onOpenAddForm: () -> Unit,
-    onResetStandard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val s = appStrings()
@@ -196,7 +194,7 @@ private fun MaintenanceListView(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 5.dp),
+                .padding(top = 2.dp, bottom = 3.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -206,14 +204,14 @@ private fun MaintenanceListView(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("ODO", color = ObsidianColors.DimSilver, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                    Text("ODO", color = ObsidianColors.DimSilver, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, style = compactLabelStyle)
                     Box(
                         modifier = Modifier
                             .width(92.dp)
                             .clip(RoundedCornerShape(6.dp))
                             .background(ObsidianColors.ObsidianSubPanel)
                             .border(1.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         BasicTextField(
                             value = odometerInput,
@@ -261,14 +259,6 @@ private fun MaintenanceListView(
                             style = compactLabelStyle
                         )
                         Text(
-                            text = "AUTO",
-                            color = ObsidianColors.EmeraldNominal,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.4.sp,
-                            style = compactLabelStyle
-                        )
-                        Text(
                             text = s.edit,
                             color = ObsidianColors.CobaltAccent,
                             fontSize = 8.5.sp,
@@ -309,24 +299,26 @@ private fun MaintenanceListView(
                 }
             }
         }
-        ServiceHairlineDivider()
 
-        // 2. Flat Reminder Lead-Time & Actions Row
+        // 2. Flat Reminder Lead-Time & Actions Row (tight vertical gap directly under ODO/Total Spent)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 6.dp),
+                .padding(top = 3.dp, bottom = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Text(
                     text = s.remind,
-                    color = ObsidianColors.DimSilver,
-                    fontSize = 9.5.sp
+                    color = ObsidianColors.MutedSilver,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    style = compactLabelStyle
                 )
                 SegmentedPillRow(
                     options = listOf(3 to "3d", 7 to "7d", 14 to "14d"),
@@ -340,15 +332,12 @@ private fun MaintenanceListView(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                CompactActionChip(
-                    label = s.addBtn,
-                    accent = ObsidianColors.CobaltAccent,
-                    bg = ObsidianColors.CobaltSurface,
-                    onClick = onOpenAddForm
-                )
-                CompactActionChip(label = s.resetBtn, onClick = onResetStandard)
-            }
+            CompactActionChip(
+                label = s.addBtn,
+                accent = ObsidianColors.CobaltAccent,
+                bg = ObsidianColors.CobaltSurface,
+                onClick = onOpenAddForm
+            )
         }
         ServiceHairlineDivider()
 
@@ -1147,27 +1136,35 @@ private fun <T> SegmentedPillRow(
     selectedValue: T,
     onSelect: (T) -> Unit
 ) {
+    val pillTextStyle = TextStyle(
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeight = 12.sp
+    )
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(7.dp))
+            .clip(RoundedCornerShape(6.dp))
             .background(Color(0xFF0E1015))
             .padding(2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp)
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         options.forEach { (value, label) ->
             val selected = value == selectedValue
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(5.dp))
+                    .clip(RoundedCornerShape(4.5.dp))
                     .background(if (selected) Color(0xFF212836) else Color.Transparent)
                     .clickable { onSelect(value) }
-                    .padding(horizontal = 7.dp, vertical = 4.dp)
+                    .padding(horizontal = 7.dp, vertical = 3.dp),
+                contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = label,
                     color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
-                    fontSize = 9.5.sp,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                    fontSize = 10.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    maxLines = 1,
+                    style = pillTextStyle
                 )
             }
         }
@@ -1186,13 +1183,19 @@ private fun CompactActionChip(
             .clip(RoundedCornerShape(6.dp))
             .background(bg)
             .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
             color = accent,
-            fontSize = 9.5.sp,
-            fontWeight = FontWeight.SemiBold
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            style = TextStyle(
+                platformStyle = PlatformTextStyle(includeFontPadding = false),
+                lineHeight = 12.sp
+            )
         )
     }
 }

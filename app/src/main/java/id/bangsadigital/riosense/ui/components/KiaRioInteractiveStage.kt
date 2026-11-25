@@ -38,9 +38,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -86,7 +88,7 @@ private enum class CarViewMode(val label: String, val targetFrame: Float?) {
     FRONT("Front", 62f),
     FRONT_45("45° Front", 72f),
     BACK("Back", 164f),
-    BACK_45("45° Back", 0f)
+    BACK_45("45° Back", 176f)
 }
 
 @Composable
@@ -559,6 +561,16 @@ fun KiaRioInteractiveStage(
 
             // CASE 5: 360° Turntable Mode — Transparent PNG 2°/Frame (180 frames: 000..179)
             else -> {
+                // Neon road-motion backdrop: visible only while Front / 45° Front / Back / 45° Back is the active tab
+                // (hidden for 360° Auto and manual drag since no tab is selected), speed follows OBD speedometer.
+                RoadMotionBackdrop(
+                    mode = if (telemetry.roadEffectEnabled) selectedViewMode else null,
+                    speedKmh = telemetry.speedKmh,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(vertical = 6.dp)
+                )
+
                 val frameIdx = ((turntableAnim.value.roundToInt() % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
                 val bmp = getOrLoadTurntableFrame(frameIdx)
                 if (bmp != null) {
@@ -707,6 +719,124 @@ fun KiaRioInteractiveStage(
                 }
             }
         )
+    }
+}
+
+/**
+ * Lightweight perspective neon road drawn behind the car (pure Canvas, zero assets).
+ * - Shown only for the 4 position tabs (Front, 45° Front, Back, 45° Back).
+ * - Marking flow speed follows [speedKmh]; at 0 km/h the road is static and the frame loop is stopped (0% CPU).
+ */
+@Composable
+private fun RoadMotionBackdrop(
+    mode: CarViewMode?,
+    speedKmh: Int,
+    modifier: Modifier = Modifier
+) {
+    val active = mode == CarViewMode.FRONT || mode == CarViewMode.FRONT_45 ||
+        mode == CarViewMode.BACK || mode == CarViewMode.BACK_45
+    var lastMode by remember { mutableStateOf(CarViewMode.FRONT_45) }
+    if (mode != null && active) lastMode = mode
+
+    val fade by animateFloatAsState(
+        targetValue = if (active) 1f else 0f,
+        animationSpec = tween(durationMillis = 280),
+        label = "roadFade"
+    )
+    val speedState = rememberUpdatedState(speedKmh)
+    var phase by remember { mutableFloatStateOf(0f) }
+    val moving = speedKmh > 0
+
+    // Frame loop runs ONLY while the road is visible and the car is moving
+    LaunchedEffect(active, moving, lastMode) {
+        if (!active || !moving) return@LaunchedEffect
+        // Ground flows toward the viewer when seen from behind, away from the viewer when seen from the front
+        val dir = if (lastMode == CarViewMode.BACK || lastMode == CarViewMode.BACK_45) 1f else -1f
+        var last = withFrameNanos { it }
+        while (true) {
+            val now = withFrameNanos { it }
+            val dt = ((now - last) / 1_000_000_000f).coerceAtMost(0.05f)
+            last = now
+            val kmh = speedState.value.coerceAtLeast(1)
+            val cyclesPerSec = 0.12f + (kmh / 120f).coerceIn(0f, 1.5f) * 1.5f
+            var next = phase + dir * cyclesPerSec * dt
+            next -= kotlin.math.floor(next)
+            phase = next
+        }
+    }
+
+    if (fade < 0.01f) return
+
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val m = lastMode
+        // Far (vanishing) point V and near point B in normalized canvas coordinates per tab
+        val (vx, vy, bx, by) = when (m) {
+            CarViewMode.FRONT, CarViewMode.BACK -> listOf(0.50f, 0.20f, 0.50f, 1.04f)
+            else -> listOf(0.86f, 0.22f, 0.14f, 1.02f)
+        }
+        val v = Offset(vx * w, vy * h)
+        val b = Offset(bx * w, by * h)
+        fun pt(s: Float) = Offset(v.x + (b.x - v.x) * s, v.y + (b.y - v.y) * s)
+
+        val halfW = w * 0.31f
+        val cobalt = ObsidianColors.CobaltAccent
+        val ph = phase
+        val k = (speedState.value / 120f).coerceIn(0f, 1f)
+
+        // Neon road edges (20 slices, brighter & thicker toward the viewer)
+        val slices = 20
+        for (side in intArrayOf(-1, 1)) {
+            for (i in 0 until slices) {
+                val s0 = i / slices.toFloat()
+                val s1 = (i + 1) / slices.toFloat()
+                val a = (s1 * 0.9f) * fade
+                val p0 = pt(s0) + Offset(side * halfW * s0, 0f)
+                val p1 = pt(s1) + Offset(side * halfW * s1, 0f)
+                drawLine(cobalt.copy(alpha = a * 0.22f), p0, p1, strokeWidth = (3f + 14f * s1).dp.toPx() * 0.6f)
+                drawLine(cobalt.copy(alpha = a), p0, p1, strokeWidth = (1f + 4.5f * s1).dp.toPx())
+            }
+        }
+
+        // Tapered road-marking (trapezoid): narrow far away, wide near the viewer (real perspective)
+        fun dash(offsetFrac: Float, u: Float, len: Float, color: Color, baseHalfWidth: Float, alphaMul: Float) {
+            val u0 = u - kotlin.math.floor(u)
+            val u1 = (u0 + len).coerceAtMost(1f)
+            val s0 = u0 * u0
+            val s1 = u1 * u1
+            val a = (0.3f + 0.7f * s1) * alphaMul * fade
+            val c0 = pt(s0) + Offset(offsetFrac * halfW * s0, 0f)
+            val c1 = pt(s1) + Offset(offsetFrac * halfW * s1, 0f)
+            val hw0 = baseHalfWidth * s0
+            val hw1 = baseHalfWidth * s1
+            val quad = Path().apply {
+                moveTo(c0.x - hw0, c0.y)
+                lineTo(c0.x + hw0, c0.y)
+                lineTo(c1.x + hw1, c1.y)
+                lineTo(c1.x - hw1, c1.y)
+                close()
+            }
+            drawPath(quad, color.copy(alpha = a.coerceIn(0f, 1f)))
+        }
+
+        // Lane dividers (thick tapered dashes) flowing with the phase
+        val dashCount = 6
+        for (i in 0 until dashCount) {
+            val u = (i + ph * 1f) / dashCount
+            dash(-0.5f, u, 0.10f, Color.White, w * 0.017f, 0.85f)
+            dash(0.5f, u, 0.10f, Color.White, w * 0.017f, 0.85f)
+        }
+
+        // Speed streaks on the outer sides: only while moving, longer & brighter as speed rises
+        if (k > 0f) {
+            for (i in 0 until 5) {
+                val u = (i * 0.2f) + ph * 1.35f + i * 0.07f
+                val len = 0.06f + 0.14f * k
+                dash(-1.7f, u, len, cobalt, w * 0.010f, 0.25f + 0.65f * k)
+                dash(1.7f, u + 0.11f, len, cobalt, w * 0.010f, 0.25f + 0.65f * k)
+            }
+        }
     }
 }
 

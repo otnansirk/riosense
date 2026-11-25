@@ -40,7 +40,7 @@ class VehicleRepository(context: Context? = null) {
     private val prefs: RioSensePreferences? = context?.let { RioSensePreferences(it) }
     private val idSeq = AtomicLong(1L)
     private var pollingCycleIndex = 0
-    private var accumulatedTripKm = 0.0
+    private var accumulatedTripKm = prefs?.loadOdometerFractionKm() ?: 0.0
 
     // Initial showcase state merged with persisted user settings & paint finish
     private val _telemetry = MutableStateFlow(
@@ -108,7 +108,6 @@ class VehicleRepository(context: Context? = null) {
     val activeTrip: StateFlow<ActiveTripState?> = _activeTrip.asStateFlow()
 
     private var simGpsStep = 0
-    private var odometerFractionKm = 0f
 
     init {
         seedInitialObdLogs()
@@ -269,13 +268,16 @@ class VehicleRepository(context: Context? = null) {
         val state = _telemetry.value
         if (!state.obdConnected) return
 
-        // Auto-accumulate live odometer distance from OBD-II vehicle speed when connected to real car
-        if (!state.simulatorMode && state.speedKmh > 0) {
+        // Unconditional background Odometer Auto-Sync from OBD-II speed (runs regardless of GPS Trip Tracking toggle)
+        if (state.rpm >= 400 && state.speedKmh > 0) {
             accumulatedTripKm += (state.speedKmh / 3600.0) * 1.5
             if (accumulatedTripKm >= 1.0) {
                 val wholeKm = accumulatedTripKm.toInt()
                 accumulatedTripKm -= wholeKm
+                prefs?.saveOdometerFractionKm(accumulatedTripKm)
                 updateMaintenance { it.copy(currentOdometerKm = it.currentOdometerKm + wholeKm) }
+            } else if (pollingCycleIndex % 10 == 0) {
+                prefs?.saveOdometerFractionKm(accumulatedTripKm)
             }
         }
 
@@ -892,6 +894,11 @@ class VehicleRepository(context: Context? = null) {
         persistTelemetrySettings()
     }
 
+    fun setRoadEffectEnabled(enabled: Boolean) {
+        _telemetry.update { it.copy(roadEffectEnabled = enabled) }
+        persistTelemetrySettings()
+    }
+
     fun loadSampleTrips() {
         val samples = TripSampleSeeder.defaultShowcaseTrips()
         _tripHistory.value = samples
@@ -944,14 +951,6 @@ class VehicleRepository(context: Context? = null) {
         )
 
         val deltaKm = (state.speedKmh / 3600f) * deltaSec
-        if (deltaKm > 0f) {
-            odometerFractionKm += deltaKm
-            if (odometerFractionKm >= 1.0f) {
-                val wholeKm = odometerFractionKm.toInt()
-                odometerFractionKm -= wholeKm
-                _maintenance.update { it.copy(currentOdometerKm = it.currentOdometerKm + wholeKm) }
-            }
-        }
         val isIdle = state.speedKmh <= 2
         // Realistic Kia Rio 1.4L Gamma fuel burn estimate (L/s): ~0.8 L/h idle, ~6.5-8.5 L/100km cruising
         val fuelRateLph = if (isIdle) 0.85f else (2.4f + (state.rpm / 1000f) * 1.45f)
@@ -1225,8 +1224,12 @@ class VehicleRepository(context: Context? = null) {
 
     // --- Fast-Moving Parts & Maintenance Reminder Management (Persisted Locally) ---
 
-    fun updateOdometerKm(odometerKm: Int) = updateMaintenance {
-        it.copy(currentOdometerKm = odometerKm.coerceIn(0, 999_999))
+    fun updateOdometerKm(odometerKm: Int) {
+        accumulatedTripKm = 0.0
+        prefs?.saveOdometerFractionKm(0.0)
+        updateMaintenance {
+            it.copy(currentOdometerKm = odometerKm.coerceIn(0, 999_999))
+        }
     }
 
     fun setMaintenanceRemindDays(days: Int) = updateMaintenance {

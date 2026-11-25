@@ -147,7 +147,8 @@ data class VehicleTelemetry(
     val voiceSttMode: VoiceSttMode = VoiceSttMode.OFFLINE,
     val voiceButtonStyle: VoiceButtonStyle = VoiceButtonStyle.TOP_BAR,
     val tripRecordingEnabled: Boolean = true,
-    val topBarBrandLogo: TopBarBrandLogo = TopBarBrandLogo.RIOSENSE
+    val topBarBrandLogo: TopBarBrandLogo = TopBarBrandLogo.RIOSENSE,
+    val roadEffectEnabled: Boolean = true
 ) {
     companion object {
         const val DEFAULT_SPEED_LOCK_THRESHOLD_KMH = 20

@@ -45,10 +45,12 @@ class RioSensePreferences(context: Context) {
         private const val KEY_VOICE_BUTTON_STYLE = "voice_button_style"
         private const val KEY_TRIP_RECORDING_ENABLED = "trip_recording_enabled"
         private const val KEY_TOP_BAR_BRAND_LOGO = "top_bar_brand_logo"
+        private const val KEY_ROAD_EFFECT_ENABLED = "road_effect_enabled"
         private const val KEY_TRIP_SEEDED_V2 = "trip_showcase_seeded_v2"
         private const val KEY_APP_LANGUAGE = "app_language"
 
         private const val KEY_ODOMETER_KM = "maintenance_odometer_km"
+        private const val KEY_ODOMETER_FRACTION_KM = "maintenance_odometer_fraction_km"
         private const val KEY_REMIND_DAYS = "maintenance_remind_days"
         private const val KEY_REMIND_KM = "maintenance_remind_km"
         private const val KEY_MAINTENANCE_ITEMS = "maintenance_items_json"
@@ -102,6 +104,7 @@ class RioSensePreferences(context: Context) {
                 base.tripRecordingEnabled
             ),
             topBarBrandLogo = brandLogo,
+            roadEffectEnabled = prefs.getBoolean(KEY_ROAD_EFFECT_ENABLED, base.roadEffectEnabled),
             speedLockAlarmThresholdKmh = prefs.getInt(
                 KEY_SPEED_LOCK_KMH,
                 VehicleTelemetry.DEFAULT_SPEED_LOCK_THRESHOLD_KMH
@@ -143,6 +146,7 @@ class RioSensePreferences(context: Context) {
             .putString(KEY_VOICE_BUTTON_STYLE, telemetry.voiceButtonStyle.name)
             .putBoolean(KEY_TRIP_RECORDING_ENABLED, telemetry.tripRecordingEnabled)
             .putString(KEY_TOP_BAR_BRAND_LOGO, telemetry.topBarBrandLogo.name)
+            .putBoolean(KEY_ROAD_EFFECT_ENABLED, telemetry.roadEffectEnabled)
             .putInt(KEY_SPEED_LOCK_KMH, telemetry.speedLockAlarmThresholdKmh)
             .putFloat(KEY_TPMS_LOW_PSI, telemetry.tpmsLowThresholdPsi)
             .putFloat(KEY_TPMS_HIGH_PSI, telemetry.tpmsHighThresholdPsi)
@@ -161,6 +165,13 @@ class RioSensePreferences(context: Context) {
 
     fun saveAppLanguage(language: AppLanguage) {
         prefs.edit().putString(KEY_APP_LANGUAGE, language.name).apply()
+    }
+
+    fun loadOdometerFractionKm(): Double =
+        prefs.getFloat(KEY_ODOMETER_FRACTION_KM, 0f).toDouble().coerceIn(0.0, 0.999)
+
+    fun saveOdometerFractionKm(fractionKm: Double) {
+        prefs.edit().putFloat(KEY_ODOMETER_FRACTION_KM, fractionKm.toFloat().coerceIn(0f, 0.999f)).apply()
     }
 
     fun loadMaintenanceState(): MaintenanceState {

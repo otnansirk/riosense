@@ -51,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -78,6 +79,9 @@ import id.bangsadigital.riosense.ui.theme.ObsidianColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 enum class ControlsTab(val label: String, val subtitle: String) {
     ERROR_LOG("Error Log", "OBD-II detected faults & DTC history"),
@@ -98,6 +102,7 @@ fun ControlsMenuSheet(
     onVoiceButtonStyleChange: (VoiceButtonStyle) -> Unit,
     onTripRecordingEnabledChange: (Boolean) -> Unit,
     onTopBarBrandLogoChange: (TopBarBrandLogo) -> Unit,
+    onRoadEffectEnabledChange: (Boolean) -> Unit,
     initialTab: ControlsTab? = null,
     tripHistory: List<TripRecord>,
     activeTrip: ActiveTripState?,
@@ -270,6 +275,57 @@ fun ControlsMenuSheet(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+
+            if (activeSection == null) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF181B22))
+                        .clickable { activeSection = ControlsTab.SETTINGS },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Canvas(modifier = Modifier.size(15.dp)) {
+                        val cx = size.width * 0.5f
+                        val cy = size.height * 0.5f
+                        val rOuter = size.minDimension * 0.44f
+                        val rRing = size.minDimension * 0.30f
+                        val rInner = size.minDimension * 0.13f
+                        val stroke = 1.45.dp.toPx()
+                        val tint = if (telemetry.isCustomAlertSettings) {
+                            ObsidianColors.CobaltAccent
+                        } else {
+                            ObsidianColors.PureSilver
+                        }
+
+                        // 8 gear teeth radiating from the outer ring
+                        for (i in 0 until 8) {
+                            val angle = (i * 45.0) * (PI / 180.0)
+                            val cosA = cos(angle).toFloat()
+                            val sinA = sin(angle).toFloat()
+                            drawLine(
+                                color = tint,
+                                start = Offset(cx + cosA * (rRing * 0.92f), cy + sinA * (rRing * 0.92f)),
+                                end = Offset(cx + cosA * rOuter, cy + sinA * rOuter),
+                                strokeWidth = 1.7.dp.toPx(),
+                                cap = StrokeCap.Round
+                            )
+                        }
+                        // Main gear body ring & center hub
+                        drawCircle(
+                            color = tint,
+                            radius = rRing,
+                            center = Offset(cx, cy),
+                            style = Stroke(width = stroke)
+                        )
+                        drawCircle(
+                            color = Color(0xFF181B22),
+                            radius = rInner,
+                            center = Offset(cx, cy)
+                        )
+                    }
+                }
+            }
         }
 
         // Content Body: Clean Flat Menu List OR Full-Sheet Active Section
@@ -309,15 +365,6 @@ fun ControlsMenuSheet(
                         statusColor = if (activeTrip != null) ObsidianColors.EmeraldNominal else ObsidianColors.DimSilver,
                         showDivider = true,
                         onClick = { activeSection = ControlsTab.TRIP_HISTORY }
-                    )
-
-                    ControlsMenuRowItem(
-                        title = s.settingsTitle,
-                        subtitle = s.settingsSubtitle,
-                        statusText = if (telemetry.isCustomAlertSettings) s.statusCustom else s.statusStandard,
-                        statusColor = if (telemetry.isCustomAlertSettings) ObsidianColors.CobaltAccent else ObsidianColors.DimSilver,
-                        showDivider = true,
-                        onClick = { activeSection = ControlsTab.SETTINGS }
                     )
 
                     ControlsMenuRowItem(
@@ -431,6 +478,7 @@ fun ControlsMenuSheet(
                     onVoiceButtonStyleChange = onVoiceButtonStyleChange,
                     onTripRecordingEnabledChange = onTripRecordingEnabledChange,
                     onTopBarBrandLogoChange = onTopBarBrandLogoChange,
+                    onRoadEffectEnabledChange = onRoadEffectEnabledChange,
                     onSpeedLockThresholdChange = onSpeedLockThresholdChange,
                     onTpmsLowPsiChange = onTpmsLowPsiChange,
                     onTpmsHighPsiChange = onTpmsHighPsiChange,
@@ -1301,6 +1349,7 @@ private fun AlarmSettingsView(
     onVoiceButtonStyleChange: (VoiceButtonStyle) -> Unit,
     onTripRecordingEnabledChange: (Boolean) -> Unit,
     onTopBarBrandLogoChange: (TopBarBrandLogo) -> Unit,
+    onRoadEffectEnabledChange: (Boolean) -> Unit,
     onSpeedLockThresholdChange: (Int) -> Unit,
     onTpmsLowPsiChange: (Float) -> Unit,
     onTpmsHighPsiChange: (Float) -> Unit,
@@ -1572,7 +1621,52 @@ private fun AlarmSettingsView(
         }
         SettingsHairlineDivider()
 
-        // 6. Top Bar Brand Logo Selector (flat row: RioSense | Kia Classic | Kia Modern)
+        // 6. Road Motion Effect Toggle (flat row: On | Off)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = s.roadEffectLabel,
+                color = ObsidianColors.PureSilver,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f),
+                maxLines = 2
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF0E1015))
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf(true to s.onLabel, false to s.offLabel).forEach { (enabled, label) ->
+                    val selected = telemetry.roadEffectEnabled == enabled
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                            .clickable { onRoadEffectEnabledChange(enabled) }
+                            .padding(horizontal = 12.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = label,
+                            color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                            fontSize = 10.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+        SettingsHairlineDivider()
+
+        // 7. Top Bar Brand Logo Selector (flat row: RioSense | Kia Classic | Kia Modern)
         Row(
             modifier = Modifier
                 .fillMaxWidth()

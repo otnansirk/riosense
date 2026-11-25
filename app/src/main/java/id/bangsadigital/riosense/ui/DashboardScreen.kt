@@ -304,6 +304,9 @@ fun RioSenseDashboardScreen(
                     onTopBarBrandLogoChange = { logo ->
                         repository.setTopBarBrandLogo(logo)
                     },
+                    onRoadEffectEnabledChange = { enabled ->
+                        repository.setRoadEffectEnabled(enabled)
+                    },
                     initialTab = controlsInitialTab,
                     tripHistory = tripHistory,
                     activeTrip = activeTrip,
@@ -469,31 +472,35 @@ private fun TopObsidianBar(
             }
         }
 
-        // Borderless Matte Charcoal Controls
+        // Borderless Top-Right OEM Icon Bar (Mic, GPS Route, Chime Speaker, Controls Sliders, Minimize PiP)
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Voice Command Microphone Button (shown in Top Bar by default; hidden when Floating style is active)
+            // Voice Command Microphone Icon (shown in Top Bar by default; hidden when Floating style is active)
             if (telemetry.voiceButtonStyle == VoiceButtonStyle.TOP_BAR) {
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (isVoiceListening) ObsidianColors.CobaltSurface else Color(0xFF0E1014))
                         .then(
                             if (isVoiceListening) {
-                                Modifier.border(0.9.dp, ObsidianColors.CobaltAccent.copy(alpha = 0.85f), RoundedCornerShape(8.dp))
+                                Modifier
+                                    .background(ObsidianColors.CobaltSurface)
+                                    .border(0.9.dp, ObsidianColors.CobaltAccent.copy(alpha = 0.85f), RoundedCornerShape(8.dp))
                             } else {
                                 Modifier
                             }
                         )
-                        .clickable { onToggleVoiceListening() },
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { onToggleVoiceListening() }
+                        .padding(horizontal = 5.dp, vertical = 5.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     MicrophoneVectorIcon(
                         tint = if (isVoiceListening) ObsidianColors.CobaltAccent else ObsidianColors.MutedSilver,
-                        modifier = Modifier.size(13.dp)
+                        modifier = Modifier.size(14.dp)
                     )
                 }
             }
@@ -505,7 +512,7 @@ private fun TopObsidianBar(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
                     ) { onToggleTripRecording() }
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                    .padding(horizontal = 4.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
@@ -523,58 +530,61 @@ private fun TopObsidianBar(
                 }
             }
 
+            // 1A. Borderless Chime / Muted Speaker Icon (Speaker + waves when ON; diagonal slash when Muted)
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF0E1014))
-                    .clickable { onToggleMute() }
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onToggleMute() }
+                    .padding(horizontal = 5.dp, vertical = 5.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = if (telemetry.audioAlarmMuted) s.muted else s.chime,
-                    color = if (telemetry.audioAlarmMuted) ObsidianColors.DimSilver else ObsidianColors.MutedSilver,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
+                SpeakerChimeVectorIcon(
+                    muted = telemetry.audioAlarmMuted,
+                    modifier = Modifier.size(15.dp)
                 )
             }
 
-            Row(
+            // 2A. Borderless Controls Sliders Icon (+ small Amber dot at top-right if service is due)
+            Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF15181F))
-                    .clickable { onOpenControls() }
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onOpenControls() }
+                    .padding(horizontal = 5.dp, vertical = 5.dp),
+                contentAlignment = Alignment.Center
             ) {
+                ControlsSlidersVectorIcon(
+                    tint = ObsidianColors.PureSilver,
+                    modifier = Modifier.size(15.dp)
+                )
                 if (hasServiceReminder) {
                     Box(
                         modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 2.dp, y = (-2).dp)
                             .size(5.dp)
                             .clip(CircleShape)
                             .background(ObsidianColors.AmberCaution)
                     )
                 }
-                Text(
-                    text = s.controls,
-                    color = ObsidianColors.PureSilver,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
-                )
             }
 
+            // 3A. Borderless Minimize / Floating Pill PiP Icon
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF0E1014))
-                    .clickable { onMinimize() }
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onMinimize() }
+                    .padding(horizontal = 5.dp, vertical = 5.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = s.minimize,
-                    color = ObsidianColors.MutedSilver,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
+                MinimizePipVectorIcon(
+                    tint = ObsidianColors.MutedSilver,
+                    modifier = Modifier.size(15.dp)
                 )
             }
         }
@@ -1102,5 +1112,147 @@ private fun TripRouteVectorIcon(
                 cap = StrokeCap.Round
             )
         }
+    }
+}
+
+/**
+ * 1A: Minimalist Speaker / Chime vector icon.
+ * Draws a speaker cone + curved sound wave when unmuted, or a dimmed speaker
+ * crossed by a diagonal slash when muted.
+ */
+@Composable
+private fun SpeakerChimeVectorIcon(
+    muted: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val stroke = 1.35.dp.toPx()
+        val baseColor = if (muted) ObsidianColors.DimSilver else ObsidianColors.MutedSilver
+
+        // Speaker cone polygon
+        val conePath = Path().apply {
+            moveTo(w * 0.12f, h * 0.37f)
+            lineTo(w * 0.30f, h * 0.37f)
+            lineTo(w * 0.54f, h * 0.17f)
+            lineTo(w * 0.54f, h * 0.83f)
+            lineTo(w * 0.30f, h * 0.63f)
+            lineTo(w * 0.12f, h * 0.63f)
+            close()
+        }
+        drawPath(
+            path = conePath,
+            color = baseColor,
+            style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+
+        if (!muted) {
+            // Sound wave arcs on the right
+            drawArc(
+                color = baseColor,
+                startAngle = -45f,
+                sweepAngle = 90f,
+                useCenter = false,
+                topLeft = Offset(w * 0.44f, h * 0.28f),
+                size = Size(w * 0.30f, h * 0.44f),
+                style = Stroke(width = stroke, cap = StrokeCap.Round)
+            )
+            drawArc(
+                color = baseColor,
+                startAngle = -50f,
+                sweepAngle = 100f,
+                useCenter = false,
+                topLeft = Offset(w * 0.48f, h * 0.16f),
+                size = Size(w * 0.44f, h * 0.68f),
+                style = Stroke(width = stroke * 0.9f, cap = StrokeCap.Round)
+            )
+        } else {
+            // Crisp diagonal slash when muted
+            drawLine(
+                color = ObsidianColors.DeepObsidian,
+                start = Offset(w * 0.14f, h * 0.14f),
+                end = Offset(w * 0.86f, h * 0.86f),
+                strokeWidth = stroke * 2.2f,
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = ObsidianColors.MutedSilver,
+                start = Offset(w * 0.14f, h * 0.14f),
+                end = Offset(w * 0.86f, h * 0.86f),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round
+            )
+        }
+    }
+}
+
+/**
+ * 2A: Minimalist 2-track horizontal sliders vector icon representing Controls.
+ */
+@Composable
+private fun ControlsSlidersVectorIcon(
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val stroke = 1.35.dp.toPx()
+        val knobR = 2.0.dp.toPx()
+
+        // Top slider track + knob at ~66%
+        val topY = h * 0.30f
+        val topKnobX = w * 0.66f
+        drawLine(tint, Offset(w * 0.10f, topY), Offset(w * 0.90f, topY), stroke, StrokeCap.Round)
+        drawCircle(ObsidianColors.DeepObsidian, radius = knobR + 0.8.dp.toPx(), center = Offset(topKnobX, topY))
+        drawCircle(tint, radius = knobR, center = Offset(topKnobX, topY), style = Stroke(width = stroke))
+
+        // Bottom slider track + knob at ~34%
+        val botY = h * 0.70f
+        val botKnobX = w * 0.34f
+        drawLine(tint, Offset(w * 0.10f, botY), Offset(w * 0.90f, botY), stroke, StrokeCap.Round)
+        drawCircle(ObsidianColors.DeepObsidian, radius = knobR + 0.8.dp.toPx(), center = Offset(botKnobX, botY))
+        drawCircle(tint, radius = knobR, center = Offset(botKnobX, botY), style = Stroke(width = stroke))
+    }
+}
+
+/**
+ * 3A: Minimalist Picture-in-Picture / Floating Pill vector icon representing Minimize.
+ * Draws an outer screen frame, a compact pill/box in the bottom-right corner, and a diagonal arrow pointing into it.
+ */
+@Composable
+private fun MinimizePipVectorIcon(
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val stroke = 1.3.dp.toPx()
+
+        // Outer display frame
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.08f, h * 0.14f),
+            size = Size(w * 0.84f, h * 0.72f),
+            cornerRadius = CornerRadius(2.4.dp.toPx(), 2.4.dp.toPx()),
+            style = Stroke(width = stroke)
+        )
+
+        // Inner floating pill in bottom-right corner
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.50f, h * 0.52f),
+            size = Size(w * 0.32f, h * 0.24f),
+            cornerRadius = CornerRadius(1.5.dp.toPx(), 1.5.dp.toPx())
+        )
+
+        // Small diagonal arrow pointing from top-left toward the floating pill
+        val aStart = Offset(w * 0.24f, h * 0.30f)
+        val aEnd = Offset(w * 0.44f, h * 0.48f)
+        drawLine(tint, aStart, aEnd, strokeWidth = stroke * 0.95f, cap = StrokeCap.Round)
+        drawLine(tint, Offset(aEnd.x - w * 0.13f, aEnd.y), aEnd, strokeWidth = stroke * 0.95f, cap = StrokeCap.Round)
+        drawLine(tint, Offset(aEnd.x, aEnd.y - h * 0.13f), aEnd, strokeWidth = stroke * 0.95f, cap = StrokeCap.Round)
     }
 }
