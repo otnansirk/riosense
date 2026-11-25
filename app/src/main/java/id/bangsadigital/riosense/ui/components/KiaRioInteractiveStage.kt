@@ -611,13 +611,8 @@ fun KiaRioInteractiveStage(
                     alignRight = false
                 )
 
-                val currentDeg = (((turntableAnim.value.roundToInt() % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT) * 2
                 Text(
-                    text = when {
-                        activePanelsCount >= 2 -> "Multi-Door Animation · Drag to Orbit 360°"
-                        activePanelsCount == 1 -> "Door Swing Animation · Drag to Orbit 360°"
-                        else -> "360° Studio Orbit (${currentDeg}°/360°) · Double-tap Reset"
-                    },
+                    text = "Double-tap Reset",
                     color = Color(0xFF3E4452),
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Medium,
