@@ -63,7 +63,6 @@ import androidx.compose.ui.unit.sp
 import id.bangsadigital.riosense.R
 import id.bangsadigital.riosense.launcher.InstalledAppsRepository
 import id.bangsadigital.riosense.model.ActiveTripState
-import id.bangsadigital.riosense.model.AppDrawerBackground
 import id.bangsadigital.riosense.model.AppIconSize
 import id.bangsadigital.riosense.model.DockDisplayMode
 import id.bangsadigital.riosense.model.DockPosition
@@ -115,7 +114,7 @@ fun ControlsMenuSheet(
     onDockDisplayModeChange: (DockDisplayMode) -> Unit,
     onDockPositionChange: (DockPosition) -> Unit,
     onAppIconSizeChange: (AppIconSize) -> Unit,
-    onAppDrawerBackgroundChange: (AppDrawerBackground) -> Unit,
+    onOpenBackgroundPicker: () -> Unit,
     onRequestOverlayPermission: () -> Unit,
     onOpenHomeLauncherSettings: () -> Unit,
     initialTab: ControlsTab? = null,
@@ -500,7 +499,7 @@ fun ControlsMenuSheet(
                     onDockDisplayModeChange = onDockDisplayModeChange,
                     onDockPositionChange = onDockPositionChange,
                     onAppIconSizeChange = onAppIconSizeChange,
-                    onAppDrawerBackgroundChange = onAppDrawerBackgroundChange,
+                    onOpenBackgroundPicker = onOpenBackgroundPicker,
                     onRequestOverlayPermission = onRequestOverlayPermission,
                     onOpenHomeLauncherSettings = onOpenHomeLauncherSettings,
                     onSpeedLockThresholdChange = onSpeedLockThresholdChange,
@@ -1380,7 +1379,7 @@ private fun AlarmSettingsView(
     onDockDisplayModeChange: (DockDisplayMode) -> Unit,
     onDockPositionChange: (DockPosition) -> Unit,
     onAppIconSizeChange: (AppIconSize) -> Unit,
-    onAppDrawerBackgroundChange: (AppDrawerBackground) -> Unit,
+    onOpenBackgroundPicker: () -> Unit,
     onRequestOverlayPermission: () -> Unit,
     onOpenHomeLauncherSettings: () -> Unit,
     onSpeedLockThresholdChange: (Int) -> Unit,
@@ -2134,64 +2133,45 @@ private fun AlarmSettingsView(
 
             SettingsHairlineDivider()
 
-            // 6. App Drawer Background Preset Selector with Live Monochrome Canvas Previews
-            Column(
+            // 6. Background Row with Live Preview Swatch (opens slide-up selector over App List)
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clickable { onOpenBackgroundPicker() }
                     .padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = s.appDrawerBgLabel,
+                    text = s.backgroundTitle,
                     color = ObsidianColors.PureSilver,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f)
                 )
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    listOf(
-                        AppDrawerBackground.OBSIDIAN_PURE to s.bgObsidian,
-                        AppDrawerBackground.CARBON_WEAVE to s.bgCarbon,
-                        AppDrawerBackground.BRUSHED_TITANIUM to s.bgTitanium,
-                        AppDrawerBackground.TOPO_CONTOUR to s.bgContour,
-                        AppDrawerBackground.MONOLITH_GRID to s.bgPrism
-                    ).forEach { (preset, label) ->
-                        val selected = launcherSettings.appDrawerBackground == preset
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (selected) Color(0xFF1A202B) else Color(0xFF0A0C10))
-                                .border(
-                                    width = if (selected) 1.2.dp else 0.7.dp,
-                                    color = if (selected) ObsidianColors.PureSilver else ObsidianColors.ObsidianSubBorder,
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                                .clickable { onAppDrawerBackgroundChange(preset) }
-                                .padding(4.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            AppDrawerBackgroundCanvas(
-                                preset = preset,
-                                isPreview = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(26.dp)
-                                    .clip(RoundedCornerShape(5.dp))
-                            )
-                            Text(
-                                text = label,
-                                color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
-                                fontSize = 9.sp,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
+                    Text(
+                        text = appDrawerBackgroundLabel(launcherSettings.appDrawerBackground, s),
+                        color = ObsidianColors.MutedSilver,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    AppDrawerBackgroundCanvas(
+                        preset = launcherSettings.appDrawerBackground,
+                        isPreview = true,
+                        modifier = Modifier
+                            .size(width = 54.dp, height = 24.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .border(0.8.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(6.dp))
+                    )
+                    Text(
+                        text = "›",
+                        color = ObsidianColors.DimSilver,
+                        fontSize = 15.sp
+                    )
                 }
             }
 

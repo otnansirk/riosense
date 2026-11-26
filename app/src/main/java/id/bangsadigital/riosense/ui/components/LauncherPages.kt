@@ -1,6 +1,7 @@
 package id.bangsadigital.riosense.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -33,6 +34,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -81,6 +84,7 @@ import id.bangsadigital.riosense.model.InstalledAppInfo
 import id.bangsadigital.riosense.model.LauncherSettings
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.ui.i18n.AppStrings
 import id.bangsadigital.riosense.ui.i18n.appStrings
 import id.bangsadigital.riosense.ui.theme.ObsidianColors
 import kotlinx.coroutines.Dispatchers
@@ -987,6 +991,134 @@ fun AppDrawerBackgroundCanvas(
                     end = Offset(w * 0.85f, h * 0.14f),
                     strokeWidth = lineStroke
                 )
+            }
+        }
+    }
+}
+
+fun appDrawerBackgroundLabel(preset: AppDrawerBackground, s: AppStrings): String = when (preset) {
+    AppDrawerBackground.OBSIDIAN_PURE -> s.bgObsidian
+    AppDrawerBackground.CARBON_WEAVE -> s.bgCarbon
+    AppDrawerBackground.BRUSHED_TITANIUM -> s.bgTitanium
+    AppDrawerBackground.TOPO_CONTOUR -> s.bgContour
+    AppDrawerBackground.MONOLITH_GRID -> s.bgPrism
+}
+
+/**
+ * Interactive slide-up bottom preset carousel rendered directly over the live App List screen
+ * so the user immediately sees background changes in real time and taps outside to finish.
+ */
+@Composable
+fun BoxScope.AppDrawerBackgroundPickerOverlay(
+    visible: Boolean,
+    selectedBackground: AppDrawerBackground,
+    onSelectBackground: (AppDrawerBackground) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val s = appStrings()
+
+    // 100% transparent outside-tap catcher so live background changes remain clearly visible
+    if (visible) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { onDismiss() }
+        )
+    }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically(tween(220)) { it } + fadeIn(tween(180)),
+        exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(150)),
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(horizontal = 18.dp, vertical = 14.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xEB11141B))
+                .border(0.8.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(16.dp))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {}
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = s.backgroundTitle,
+                        color = ObsidianColors.PureSilver,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "· ${appDrawerBackgroundLabel(selectedBackground, s)}",
+                        color = ObsidianColors.MutedSilver,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Text(
+                    text = s.tapOutsideToFinish,
+                    color = ObsidianColors.DimSilver,
+                    fontSize = 10.sp
+                )
+            }
+
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                items(AppDrawerBackground.entries, key = { it.name }) { preset ->
+                    val selected = preset == selectedBackground
+                    Column(
+                        modifier = Modifier
+                            .width(112.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (selected) Color(0xFF1A202B) else Color(0xFF0A0C10))
+                            .border(
+                                width = if (selected) 1.4.dp else 0.8.dp,
+                                color = if (selected) ObsidianColors.PureSilver else ObsidianColors.ObsidianSubBorder,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .clickable { onSelectBackground(preset) }
+                            .padding(5.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        AppDrawerBackgroundCanvas(
+                            preset = preset,
+                            isPreview = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(58.dp)
+                                .clip(RoundedCornerShape(7.dp))
+                        )
+                        Text(
+                            text = appDrawerBackgroundLabel(preset, s),
+                            color = if (selected) ObsidianColors.PureSilver else ObsidianColors.MutedSilver,
+                            fontSize = 10.5.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
         }
     }

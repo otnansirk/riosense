@@ -94,6 +94,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import id.bangsadigital.riosense.ui.components.AppDrawerBackgroundCanvas
+import id.bangsadigital.riosense.ui.components.AppDrawerBackgroundPickerOverlay
 import id.bangsadigital.riosense.ui.components.ControlsMenuSheet
 import id.bangsadigital.riosense.ui.components.ControlsTab
 import id.bangsadigital.riosense.ui.components.InAppObsidianDock
@@ -136,6 +137,7 @@ fun RioSenseDashboardScreen(
     val s = appStrings()
     var showSimulatorDrawer by remember { mutableStateOf(false) }
     var showControlsDrawer by remember { mutableStateOf(false) }
+    var showBackgroundPicker by remember { mutableStateOf(false) }
     var controlsInitialTab by remember { mutableStateOf<ControlsTab?>(null) }
     var isCarDragging by remember { mutableStateOf(false) }
 
@@ -241,8 +243,11 @@ fun RioSenseDashboardScreen(
             }
         }
 
-        BackHandler(enabled = showSimulatorDrawer || showControlsDrawer || pagerState.currentPage != LAUNCHER_PAGE_HOME) {
+        BackHandler(
+            enabled = showBackgroundPicker || showSimulatorDrawer || showControlsDrawer || pagerState.currentPage != LAUNCHER_PAGE_HOME
+        ) {
             when {
+                showBackgroundPicker -> showBackgroundPicker = false
                 showSimulatorDrawer -> showSimulatorDrawer = false
                 showControlsDrawer -> showControlsDrawer = false
                 pagerState.currentPage != LAUNCHER_PAGE_HOME -> {
@@ -270,7 +275,7 @@ fun RioSenseDashboardScreen(
 
         HorizontalPager(
             state = pagerState,
-            userScrollEnabled = !isCarDragging && !showControlsDrawer && !showSimulatorDrawer,
+            userScrollEnabled = !isCarDragging && !showControlsDrawer && !showSimulatorDrawer && !showBackgroundPicker,
             modifier = Modifier.fillMaxSize()
         ) { page ->
             when (page) {
@@ -474,7 +479,7 @@ fun RioSenseDashboardScreen(
         }
 
         // In-app Obsidian Dock fallback when global overlay permission is not granted yet
-        if (launcherSettings.dockEnabled && !hasOverlayPermission) {
+        if (launcherSettings.dockEnabled && !hasOverlayPermission && !showBackgroundPicker) {
             InAppObsidianDock(
                 settings = launcherSettings,
                 onGoHome = {
@@ -486,6 +491,14 @@ fun RioSenseDashboardScreen(
                 onLaunchApp = { pkg -> InstalledAppsRepository.launchApp(context, pkg) }
             )
         }
+
+        // Slide-up live Background Preset Picker over the App List page
+        AppDrawerBackgroundPickerOverlay(
+            visible = showBackgroundPicker,
+            selectedBackground = launcherSettings.appDrawerBackground,
+            onSelectBackground = { bg -> repository.setAppDrawerBackground(bg) },
+            onDismiss = { showBackgroundPicker = false }
+        )
 
         // Consistent single-line Obsidian floating notification card matching VoiceCommandFloatingOverlay
         pinFeedback?.let { message ->
@@ -580,7 +593,14 @@ fun RioSenseDashboardScreen(
                     onDockDisplayModeChange = { mode -> repository.setDockDisplayMode(mode) },
                     onDockPositionChange = { pos -> repository.setDockPosition(pos) },
                     onAppIconSizeChange = { size -> repository.setAppIconSize(size) },
-                    onAppDrawerBackgroundChange = { bg -> repository.setAppDrawerBackground(bg) },
+                    onOpenBackgroundPicker = {
+                        showControlsDrawer = false
+                        showSimulatorDrawer = false
+                        if (pagerState.currentPage < LAUNCHER_PAGE_APPS) {
+                            scope.launch { pagerState.animateScrollToPage(LAUNCHER_PAGE_APPS) }
+                        }
+                        showBackgroundPicker = true
+                    },
                     onRequestOverlayPermission = onRequestOverlayPermission,
                     onOpenHomeLauncherSettings = onOpenHomeLauncherSettings,
                     initialTab = controlsInitialTab,

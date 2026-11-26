@@ -235,7 +235,9 @@ data class AppStrings(
     val bgCarbon: String,
     val bgTitanium: String,
     val bgContour: String,
-    val bgPrism: String
+    val bgPrism: String,
+    val backgroundTitle: String,
+    val tapOutsideToFinish: String
 )
 
 fun stringsFor(lang: AppLanguage): AppStrings = when (lang) {
@@ -453,7 +455,9 @@ private val EnglishStrings = AppStrings(
     bgCarbon = "Carbon",
     bgTitanium = "Titanium",
     bgContour = "Contour",
-    bgPrism = "Prism"
+    bgPrism = "Prism",
+    backgroundTitle = "Background",
+    tapOutsideToFinish = "Tap outside to finish"
 )
 
 private val IndonesianStrings = AppStrings(
@@ -666,5 +670,7 @@ private val IndonesianStrings = AppStrings(
     bgCarbon = "Karbon",
     bgTitanium = "Titanium",
     bgContour = "Kontur",
-    bgPrism = "Prisma"
+    bgPrism = "Prisma",
+    backgroundTitle = "Background",
+    tapOutsideToFinish = "Ketuk di luar untuk selesai"
 )
