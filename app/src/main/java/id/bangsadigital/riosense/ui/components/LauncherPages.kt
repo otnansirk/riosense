@@ -772,7 +772,7 @@ private fun TiltedPinVectorIcon(modifier: Modifier = Modifier) {
                 cap = StrokeCap.Round
             )
 
-            // Muted light-grey center body
+            // Dark-grey center body
             val centerBody = Path().apply {
                 moveTo(w * 0.38f, h * 0.25f)
                 lineTo(w * 0.62f, h * 0.25f)
@@ -780,9 +780,9 @@ private fun TiltedPinVectorIcon(modifier: Modifier = Modifier) {
                 lineTo(w * 0.38f, h * 0.44f)
                 close()
             }
-            drawPath(path = centerBody, color = mutedLightGreyBody)
+            drawPath(path = centerBody, color = darkGreyCap)
 
-            // Dark-grey top cap & flared collar
+            // Muted light-grey top cap & flared collar
             val capBar = Path().apply {
                 moveTo(w * 0.30f, h * 0.16f)
                 lineTo(w * 0.70f, h * 0.16f)
@@ -797,8 +797,8 @@ private fun TiltedPinVectorIcon(modifier: Modifier = Modifier) {
                 lineTo(w * 0.26f, h * 0.54f)
                 close()
             }
-            drawPath(path = capBar, color = darkGreyCap)
-            drawPath(path = collarBase, color = darkGreyCap)
+            drawPath(path = capBar, color = mutedLightGreyBody)
+            drawPath(path = collarBase, color = mutedLightGreyBody)
         }
     }
 }
