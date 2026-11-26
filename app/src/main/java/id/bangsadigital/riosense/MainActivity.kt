@@ -2,6 +2,7 @@ package id.bangsadigital.riosense
 
 import android.Manifest
 import android.app.PictureInPictureParams
+import android.content.ComponentCallbacks2
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.SoundPool
@@ -85,10 +86,8 @@ class MainActivity : ComponentActivity() {
         vehicleRepository = VehicleRepository(applicationContext)
         voiceReminderEngine = VoiceReminderEngine(applicationContext)
         voiceActionExecutor = VoiceActionExecutor(applicationContext, vehicleRepository)
-        semanticNluEngine = SemanticNluEngine(applicationContext).also {
-            // Gently warm up Offline Semantic AI on background IO thread without blocking UI startup
-            it.warmUpAsync(lifecycleScope, initialDelayMs = 1500L)
-        }
+        // 0 MB startup RAM: ONNX voice NLU lazy-loads on first microphone tap and auto-unloads when idle/backgrounded
+        semanticNluEngine = SemanticNluEngine(applicationContext)
         voiceCommandController = VoiceCommandController(applicationContext) { transcript, usedOfflineStt ->
             handleVoiceTranscript(transcript, usedOfflineStt)
         }
@@ -199,6 +198,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStop() {
+        super.onStop()
+        if (!voiceCommandController.uiState.value.isListening) {
+            semanticNluEngine.unloadAsync(lifecycleScope, reason = "activity stopped")
+        }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        val shouldUnloadNlu = level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN ||
+            level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
+        if (shouldUnloadNlu && !voiceCommandController.uiState.value.isListening) {
+            semanticNluEngine.unloadAsync(lifecycleScope, reason = "trimMemory($level)")
+        }
+    }
+
     override fun onDestroy() {
         tripGpsTracker.stopTracking()
         voiceCommandController.destroy()
@@ -228,6 +244,11 @@ class MainActivity : ComponentActivity() {
         if (!state.audioAlarmMuted) {
             voiceReminderEngine.playListenChime()
         }
+        semanticNluEngine.warmUpAsync(
+            scope = lifecycleScope,
+            initialDelayMs = 0L,
+            idleUnloadMs = SemanticNluEngine.DEFAULT_IDLE_UNLOAD_MS
+        )
         voiceCommandController.startListening(
             language = vehicleRepository.appLanguage.value
         )
@@ -235,6 +256,7 @@ class MainActivity : ComponentActivity() {
 
     private fun handleVoiceTranscript(transcript: String, usedOfflineStt: Boolean) {
         lifecycleScope.launch {
+            semanticNluEngine.markActive(lifecycleScope)
             val parsed = VoiceCommandParser.parseHybrid(transcript, semanticNluEngine)
             val command = parsed.command
             val lang = vehicleRepository.appLanguage.value

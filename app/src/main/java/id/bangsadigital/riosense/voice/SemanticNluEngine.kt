@@ -8,6 +8,7 @@ import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -50,6 +51,11 @@ class SemanticNluEngine(private val context: Context) {
     @Volatile
     private var isClosed: Boolean = false
 
+    @Volatile
+    private var idleUnloadScope: CoroutineScope? = null
+
+    private var idleUnloadJob: Job? = null
+
     private var ortEnv: OrtEnvironment? = null
     private var ortSession: OrtSession? = null
     private var tokenizer: UnigramTokenizer? = null
@@ -57,10 +63,66 @@ class SemanticNluEngine(private val context: Context) {
     private var prototypeVectors: FloatArray = FloatArray(0)
     private var embeddingDim: Int = 384
 
-    fun warmUpAsync(scope: CoroutineScope, initialDelayMs: Long = 1500L) {
+    fun warmUpAsync(
+        scope: CoroutineScope,
+        initialDelayMs: Long = 0L,
+        idleUnloadMs: Long = DEFAULT_IDLE_UNLOAD_MS
+    ) {
+        idleUnloadScope = scope
+        idleUnloadJob?.cancel()
+        idleUnloadJob = null
         scope.launch(Dispatchers.IO) {
             if (initialDelayMs > 0L) delay(initialDelayMs)
-            ensureInitialized()
+            if (ensureInitialized()) {
+                scheduleIdleUnload(scope, idleUnloadMs)
+            }
+        }
+    }
+
+    fun markActive(
+        scope: CoroutineScope,
+        idleUnloadMs: Long = DEFAULT_IDLE_UNLOAD_MS
+    ) {
+        idleUnloadScope = scope
+        if (isReady && !isClosed) {
+            scheduleIdleUnload(scope, idleUnloadMs)
+        }
+    }
+
+    private fun scheduleIdleUnload(scope: CoroutineScope, idleUnloadMs: Long) {
+        idleUnloadJob?.cancel()
+        idleUnloadJob = if (idleUnloadMs > 0L) {
+            scope.launch(Dispatchers.IO) {
+                delay(idleUnloadMs)
+                unload("idle timeout")
+            }
+        } else {
+            null
+        }
+    }
+
+    suspend fun unload(reason: String = "manual") {
+        initMutex.withLock {
+            inferMutex.withLock {
+                idleUnloadJob?.cancel()
+                idleUnloadJob = null
+                if (!isReady && ortSession == null && tokenizer == null) {
+                    return
+                }
+                isReady = false
+                runCatching { ortSession?.close() }
+                ortSession = null
+                tokenizer = null
+                prototypeIntents = emptyArray()
+                prototypeVectors = FloatArray(0)
+                Log.i(TAG, "Offline Semantic AI unloaded ($reason) to free RAM")
+            }
+        }
+    }
+
+    fun unloadAsync(scope: CoroutineScope, reason: String = "memory trim") {
+        scope.launch(Dispatchers.IO) {
+            unload(reason)
         }
     }
 
@@ -108,107 +170,144 @@ class SemanticNluEngine(private val context: Context) {
         if (rawText.isBlank() || isClosed) return null
         if (!ensureInitialized()) return null
 
-        val env = ortEnv ?: return null
-        val session = ortSession ?: return null
-        val tok = tokenizer ?: return null
-        if (prototypeIntents.isEmpty()) return null
+        idleUnloadScope?.let { scope ->
+            scheduleIdleUnload(scope, DEFAULT_IDLE_UNLOAD_MS)
+        }
 
         return withContext(Dispatchers.Default) {
+            var needsReinit = false
+            var result: SemanticIntentMatch? = null
+
             inferMutex.withLock {
-                if (isClosed) return@withLock null
-                runCatching {
-                    val startMs = SystemClock.elapsedRealtime()
-                    val inputIds = tok.encode(rawText)
-                    val seqLen = inputIds.size
-                    val shape = longArrayOf(1L, seqLen.toLong())
-
-                    val attentionMask = LongArray(seqLen) { 1L }
-                    val tokenTypeIds = LongArray(seqLen) { 0L }
-
-                    val idsTensor = OnnxTensor.createTensor(env, LongBuffer.wrap(inputIds), shape)
-                    val maskTensor = OnnxTensor.createTensor(env, LongBuffer.wrap(attentionMask), shape)
-                    val typeTensor = OnnxTensor.createTensor(env, LongBuffer.wrap(tokenTypeIds), shape)
-
-                    val inputs = HashMap<String, OnnxTensor>(3).apply {
-                        put("input_ids", idsTensor)
-                        put("attention_mask", maskTensor)
-                        if (session.inputNames.contains("token_type_ids")) {
-                            put("token_type_ids", typeTensor)
-                        }
-                    }
-
-                    val embedding = try {
-                        session.run(inputs).use { results ->
-                            val outputTensor = results[0] as OnnxTensor
-                            val floatBuf = outputTensor.floatBuffer
-                            val hiddenDim = embeddingDim
-
-                            // Mean pooling over all tokens + L2 normalization
-                            val pooled = FloatArray(hiddenDim)
-                            for (t in 0 until seqLen) {
-                                val base = t * hiddenDim
-                                for (d in 0 until hiddenDim) {
-                                    pooled[d] += floatBuf.get(base + d)
-                                }
-                            }
-                            var normSq = 0.0
-                            val invSeq = 1.0f / seqLen.toFloat()
-                            for (d in 0 until hiddenDim) {
-                                val v = pooled[d] * invSeq
-                                pooled[d] = v
-                                normSq += (v * v).toDouble()
-                            }
-                            val invNorm = (1.0 / (sqrt(normSq) + 1e-12)).toFloat()
-                            for (d in 0 until hiddenDim) {
-                                pooled[d] *= invNorm
-                            }
-                            pooled
-                        }
-                    } finally {
-                        idsTensor.close()
-                        maskTensor.close()
-                        typeTensor.close()
-                    }
-
-                    // Cosine similarity against all precomputed L2-normalized prototypes
-                    var bestIdx = -1
-                    var bestScore = -1f
-                    val dim = embeddingDim
-                    for (i in prototypeIntents.indices) {
-                        val offset = i * dim
-                        var dot = 0f
-                        for (d in 0 until dim) {
-                            dot += embedding[d] * prototypeVectors[offset + d]
-                        }
-                        if (dot > bestScore) {
-                            bestScore = dot
-                            bestIdx = i
-                        }
-                    }
-
-                    val elapsed = SystemClock.elapsedRealtime() - startMs
-                    if (bestIdx >= 0 && bestScore >= minConfidence) {
-                        SemanticIntentMatch(
-                            intentId = prototypeIntents[bestIdx],
-                            confidence = bestScore,
-                            inferenceMs = elapsed
-                        )
-                    } else {
-                        null
-                    }
-                }.onFailure { err ->
-                    Log.w(TAG, "Semantic classification failed", err)
-                }.getOrNull()
+                if (isClosed) return@withLock
+                val env = ortEnv
+                val session = ortSession
+                val tok = tokenizer
+                if (!isReady || env == null || session == null || tok == null || prototypeIntents.isEmpty()) {
+                    needsReinit = true
+                } else {
+                    result = runInferenceLocked(env, session, tok, rawText, minConfidence)
+                }
             }
+
+            if (needsReinit && !isClosed && ensureInitialized()) {
+                inferMutex.withLock {
+                    if (isClosed) return@withLock
+                    val env = ortEnv
+                    val session = ortSession
+                    val tok = tokenizer
+                    if (isReady && env != null && session != null && tok != null && prototypeIntents.isNotEmpty()) {
+                        result = runInferenceLocked(env, session, tok, rawText, minConfidence)
+                    }
+                }
+            }
+
+            result
         }
+    }
+
+    private fun runInferenceLocked(
+        env: OrtEnvironment,
+        session: OrtSession,
+        tok: UnigramTokenizer,
+        rawText: String,
+        minConfidence: Float
+    ): SemanticIntentMatch? {
+        return runCatching {
+            val startMs = SystemClock.elapsedRealtime()
+            val inputIds = tok.encode(rawText)
+            val seqLen = inputIds.size
+            val shape = longArrayOf(1L, seqLen.toLong())
+
+            val attentionMask = LongArray(seqLen) { 1L }
+            val tokenTypeIds = LongArray(seqLen) { 0L }
+
+            val idsTensor = OnnxTensor.createTensor(env, LongBuffer.wrap(inputIds), shape)
+            val maskTensor = OnnxTensor.createTensor(env, LongBuffer.wrap(attentionMask), shape)
+            val typeTensor = OnnxTensor.createTensor(env, LongBuffer.wrap(tokenTypeIds), shape)
+
+            val inputs = HashMap<String, OnnxTensor>(3).apply {
+                put("input_ids", idsTensor)
+                put("attention_mask", maskTensor)
+                if (session.inputNames.contains("token_type_ids")) {
+                    put("token_type_ids", typeTensor)
+                }
+            }
+
+            val embedding = try {
+                session.run(inputs).use { results ->
+                    val outputTensor = results[0] as OnnxTensor
+                    val floatBuf = outputTensor.floatBuffer
+                    val hiddenDim = embeddingDim
+
+                    // Mean pooling over all tokens + L2 normalization
+                    val pooled = FloatArray(hiddenDim)
+                    for (t in 0 until seqLen) {
+                        val base = t * hiddenDim
+                        for (d in 0 until hiddenDim) {
+                            pooled[d] += floatBuf.get(base + d)
+                        }
+                    }
+                    var normSq = 0.0
+                    val invSeq = 1.0f / seqLen.toFloat()
+                    for (d in 0 until hiddenDim) {
+                        val v = pooled[d] * invSeq
+                        pooled[d] = v
+                        normSq += (v * v).toDouble()
+                    }
+                    val invNorm = (1.0 / (sqrt(normSq) + 1e-12)).toFloat()
+                    for (d in 0 until hiddenDim) {
+                        pooled[d] *= invNorm
+                    }
+                    pooled
+                }
+            } finally {
+                idsTensor.close()
+                maskTensor.close()
+                typeTensor.close()
+            }
+
+            // Cosine similarity against all precomputed L2-normalized prototypes
+            var bestIdx = -1
+            var bestScore = -1f
+            val dim = embeddingDim
+            for (i in prototypeIntents.indices) {
+                val offset = i * dim
+                var dot = 0f
+                for (d in 0 until dim) {
+                    dot += embedding[d] * prototypeVectors[offset + d]
+                }
+                if (dot > bestScore) {
+                    bestScore = dot
+                    bestIdx = i
+                }
+            }
+
+            val elapsed = SystemClock.elapsedRealtime() - startMs
+            if (bestIdx >= 0 && bestScore >= minConfidence) {
+                SemanticIntentMatch(
+                    intentId = prototypeIntents[bestIdx],
+                    confidence = bestScore,
+                    inferenceMs = elapsed
+                )
+            } else {
+                null
+            }
+        }.onFailure { err ->
+            Log.w(TAG, "Semantic classification failed", err)
+        }.getOrNull()
     }
 
     fun close() {
         isClosed = true
         isReady = false
+        idleUnloadJob?.cancel()
+        idleUnloadJob = null
         runCatching { ortSession?.close() }
         ortSession = null
         tokenizer = null
+        prototypeIntents = emptyArray()
+        prototypeVectors = FloatArray(0)
     }
 
     private fun ensureModelExtracted(): File {
@@ -268,5 +367,6 @@ class SemanticNluEngine(private val context: Context) {
         private const val VOCAB_ASSET_PATH = "nlu/spm_vocab.bin"
         private const val PROTOTYPES_ASSET_PATH = "nlu/nlu_prototypes.bin"
         const val DEFAULT_CONFIDENCE_THRESHOLD = 0.70f
+        const val DEFAULT_IDLE_UNLOAD_MS = 180_000L
     }
 }

@@ -1,5 +1,7 @@
 package id.bangsadigital.riosense.ui.components
 
+import android.content.ComponentCallbacks2
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
@@ -63,9 +65,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import id.bangsadigital.riosense.model.KiaRioPaintColor
 import id.bangsadigital.riosense.model.LightState
 import id.bangsadigital.riosense.model.TireInfo
@@ -80,7 +85,9 @@ import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 private const val TURNTABLE_COUNT = 180
+private const val TURNTABLE_CACHE_MAX_FRAMES = 36
 private const val DOOR_SEQ_MAX_INDEX = 19
+private const val DOOR_CACHE_MAX_FRAMES = 24
 private const val REAR_RIGHT_DOOR_FRAME = 0f
 private const val REAR_LEFT_DOOR_FRAME = 146f
 
@@ -99,6 +106,7 @@ fun KiaRioInteractiveStage(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
     // All turntable_360 and door assets use Transparent PNG (ARGB_8888 to preserve full alpha)
@@ -109,9 +117,9 @@ fun KiaRioInteractiveStage(
     }
 
     // 1. Thread-Safe LRU Frame Cache for 180 Transparent PNGs (2 deg/frame: turntable_000.png .. turntable_179.png)
-    //    Capacity of 90 frames (~80 MB RAM active) + auto-evict on minimize to keep 4GB Head Units responsive.
+    //    Capped at 36 frames (~32 MB max active) with mode-aware prefetching and auto-evict when backgrounded.
     val turntableCache = remember {
-        object : LruCache<Int, ImageBitmap>(90) {}
+        object : LruCache<Int, ImageBitmap>(TURNTABLE_CACHE_MAX_FRAMES) {}
     }
 
     fun getOrLoadTurntableFrame(index: Int): ImageBitmap? {
@@ -133,25 +141,53 @@ fun KiaRioInteractiveStage(
         return loaded
     }
 
+    var isUserDraggingTurntable by remember { mutableStateOf(false) }
+    var selectedViewMode by remember { mutableStateOf<CarViewMode?>(CarViewMode.FRONT_45) }
+    var isStageForeground by remember { mutableStateOf(true) }
+
     // 360° orbit state (0f .. 180f, each 1.0f = 2° smooth step), defaulting to 45° Front View (frame 72)
     val turntableAnim = remember { Animatable(CarViewMode.FRONT_45.targetFrame ?: 72f) }
     val activeTurntableIdx = ((turntableAnim.value.roundToInt() % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
 
-    // Sliding-window background prefetcher (±35 frames) for zero-stutter 60 FPS rotation & 179->0 wraparound
-    LaunchedEffect(activeTurntableIdx) {
+    // Mode-aware background prefetcher:
+    // - Static preset: small ±5 window + 4 tab anchors (~13 MB vs ~64 MB)
+    // - 360° Auto: forward-only 18-frame lookahead (~1.1s ahead at 16 fps)
+    // - Manual drag: bidirectional ±14 window
+    LaunchedEffect(activeTurntableIdx, selectedViewMode, isUserDraggingTurntable, isStageForeground) {
+        if (!isStageForeground) return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            for (offset in 0..35) {
-                getOrLoadTurntableFrame(activeTurntableIdx + offset)
-                if (offset > 0) {
-                    getOrLoadTurntableFrame(activeTurntableIdx - offset)
+            when {
+                selectedViewMode == CarViewMode.AUTO_ROTATE -> {
+                    for (offset in 0..18) {
+                        getOrLoadTurntableFrame(activeTurntableIdx + offset)
+                    }
+                }
+                isUserDraggingTurntable -> {
+                    for (offset in 0..14) {
+                        getOrLoadTurntableFrame(activeTurntableIdx + offset)
+                        if (offset > 0) {
+                            getOrLoadTurntableFrame(activeTurntableIdx - offset)
+                        }
+                    }
+                }
+                else -> {
+                    for (offset in 0..5) {
+                        getOrLoadTurntableFrame(activeTurntableIdx + offset)
+                        if (offset > 0) {
+                            getOrLoadTurntableFrame(activeTurntableIdx - offset)
+                        }
+                    }
+                    CarViewMode.entries.forEach { preset ->
+                        preset.targetFrame?.let { getOrLoadTurntableFrame(it.roundToInt()) }
+                    }
                 }
             }
         }
     }
 
-    // 2. Lazy LRU Cache for 7 Door & Tailgate Swing Sequences (max 45 frames in RAM ~28 MB)
+    // 2. Lazy LRU Cache for 7 Door & Tailgate Swing Sequences (max 24 frames in RAM, auto-evicted once doors close)
     val doorCache = remember {
-        object : LruCache<String, ImageBitmap>(45) {}
+        object : LruCache<String, ImageBitmap>(DOOR_CACHE_MAX_FRAMES) {}
     }
 
     fun getOrLoadDoorFrame(prefix: String, step: Int): ImageBitmap? {
@@ -174,16 +210,54 @@ fun KiaRioInteractiveStage(
         return loaded
     }
 
-    // Evict cached car bitmaps when stage leaves composition (Minimize mode) to free RAM for Maps/Spotify
-    DisposableEffect(Unit) {
+    // Evict cached car bitmaps on ON_STOP, memory trim, or disposal so Maps/Spotify get full Head Unit RAM
+    DisposableEffect(lifecycleOwner, context) {
+        val appContext = context.applicationContext
+        val lifecycleObserver = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    isStageForeground = true
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    isStageForeground = false
+                    synchronized(turntableCache) { turntableCache.evictAll() }
+                    synchronized(doorCache) { doorCache.evictAll() }
+                }
+                else -> Unit
+            }
+        }
+        val trimCallbacks = object : ComponentCallbacks2 {
+            override fun onTrimMemory(level: Int) {
+                if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+                    synchronized(turntableCache) { turntableCache.evictAll() }
+                    synchronized(doorCache) { doorCache.evictAll() }
+                } else if (
+                    level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+                    level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
+                ) {
+                    synchronized(turntableCache) { turntableCache.trimToSize(4) }
+                    synchronized(doorCache) { doorCache.trimToSize(4) }
+                }
+            }
+
+            override fun onLowMemory() {
+                synchronized(turntableCache) { turntableCache.trimToSize(1) }
+                synchronized(doorCache) { doorCache.evictAll() }
+            }
+
+            override fun onConfigurationChanged(newConfig: Configuration) = Unit
+        }
+
+        lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
+        appContext.registerComponentCallbacks(trimCallbacks)
+
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
+            appContext.unregisterComponentCallbacks(trimCallbacks)
             synchronized(turntableCache) { turntableCache.evictAll() }
             synchronized(doorCache) { doorCache.evictAll() }
         }
     }
-
-    var isUserDraggingTurntable by remember { mutableStateOf(false) }
-    var selectedViewMode by remember { mutableStateOf<CarViewMode?>(CarViewMode.FRONT_45) }
 
     suspend fun animateTurntableTo(targetFrame: Float) {
         val currentMod = ((turntableAnim.value % TURNTABLE_COUNT) + TURNTABLE_COUNT) % TURNTABLE_COUNT
@@ -204,12 +278,12 @@ fun KiaRioInteractiveStage(
     val trunkOpenNow = d.trunkOpen
 
     // Auto Rotate 360° Mode: advance smoothly on display VSync (~16 frames/sec),
-    // pausing automatically while any door or tailgate is open without altering selectedViewMode
+    // pausing automatically while any door or tailgate is open or while stage is backgrounded
     val anyDoorOpen = rightOpenNow || leftOpenNow || trunkOpenNow
-    LaunchedEffect(selectedViewMode, anyDoorOpen) {
-        if (selectedViewMode == CarViewMode.AUTO_ROTATE && !anyDoorOpen) {
+    LaunchedEffect(selectedViewMode, anyDoorOpen, isStageForeground) {
+        if (selectedViewMode == CarViewMode.AUTO_ROTATE && !anyDoorOpen && isStageForeground) {
             var lastNanos = withFrameNanos { it }
-            while (selectedViewMode == CarViewMode.AUTO_ROTATE && !anyDoorOpen) {
+            while (selectedViewMode == CarViewMode.AUTO_ROTATE && !anyDoorOpen && isStageForeground) {
                 val now = withFrameNanos { it }
                 val dtSec = ((now - lastNanos) / 1_000_000_000f).coerceAtMost(0.05f)
                 lastNanos = now
@@ -293,10 +367,11 @@ fun KiaRioInteractiveStage(
             }
         }
 
-        if (!rightOpenNow && !leftOpenNow && !trunkOpenNow && !isUserDraggingTurntable) {
-            // Once all doors are closed, smoothly return to the manually selected view (or default 45° Front)
-            // without changing the bottom view-selector indicator
-            if (selectedViewMode != CarViewMode.AUTO_ROTATE) {
+        if (!rightOpenNow && !leftOpenNow && !trunkOpenNow) {
+            synchronized(doorCache) { doorCache.evictAll() }
+            if (!isUserDraggingTurntable && selectedViewMode != CarViewMode.AUTO_ROTATE) {
+                // Once all doors are closed, smoothly return to the manually selected view (or default 45° Front)
+                // without changing the bottom view-selector indicator
                 val returnFrame = selectedViewMode?.targetFrame ?: (CarViewMode.FRONT_45.targetFrame ?: 72f)
                 animateTurntableTo(returnFrame)
             }
