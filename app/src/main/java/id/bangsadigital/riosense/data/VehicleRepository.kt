@@ -2,8 +2,13 @@ package id.bangsadigital.riosense.data
 
 import android.content.Context
 import id.bangsadigital.riosense.model.ActiveTripState
+import id.bangsadigital.riosense.model.AppDrawerBackground
+import id.bangsadigital.riosense.model.AppIconSize
+import id.bangsadigital.riosense.model.DockDisplayMode
+import id.bangsadigital.riosense.model.DockPosition
 import id.bangsadigital.riosense.model.DoorState
 import id.bangsadigital.riosense.model.KiaRioPaintColor
+import id.bangsadigital.riosense.model.LauncherSettings
 import id.bangsadigital.riosense.model.LightState
 import id.bangsadigital.riosense.model.MaintenanceItem
 import id.bangsadigital.riosense.model.MaintenanceState
@@ -106,6 +111,11 @@ class VehicleRepository(context: Context? = null) {
 
     private val _activeTrip = MutableStateFlow<ActiveTripState?>(null)
     val activeTrip: StateFlow<ActiveTripState?> = _activeTrip.asStateFlow()
+
+    private val _launcherSettings = MutableStateFlow(
+        prefs?.loadLauncherSettings() ?: LauncherSettings()
+    )
+    val launcherSettings: StateFlow<LauncherSettings> = _launcherSettings.asStateFlow()
 
     private var simGpsStep = 0
 
@@ -1492,5 +1502,48 @@ class VehicleRepository(context: Context? = null) {
             if (lights.brake) add("Brake")
         }
         return if (active.isEmpty()) "All Off" else active.joinToString(", ")
+    }
+
+    private fun updateLauncherSettings(transform: (LauncherSettings) -> LauncherSettings) {
+        _launcherSettings.update { current ->
+            val next = transform(current)
+            prefs?.saveLauncherSettings(next)
+            next
+        }
+    }
+
+    fun setDockEnabled(enabled: Boolean) {
+        updateLauncherSettings { it.copy(dockEnabled = enabled) }
+    }
+
+    fun setDockDisplayMode(mode: DockDisplayMode) {
+        updateLauncherSettings { it.copy(dockDisplayMode = mode) }
+    }
+
+    fun setDockPosition(position: DockPosition) {
+        updateLauncherSettings { it.copy(dockPosition = position) }
+    }
+
+    fun setAppIconSize(size: AppIconSize) {
+        updateLauncherSettings { it.copy(appIconSize = size) }
+    }
+
+    fun setAppDrawerBackground(background: AppDrawerBackground) {
+        updateLauncherSettings { it.copy(appDrawerBackground = background) }
+    }
+
+    fun togglePinnedDockApp(packageName: String): Boolean {
+        var isNowPinned = false
+        updateLauncherSettings { current ->
+            val updated = if (current.pinnedPackages.contains(packageName)) {
+                isNowPinned = false
+                current.pinnedPackages.filterNot { it == packageName }
+            } else {
+                isNowPinned = true
+                (current.pinnedPackages + packageName).takeLast(LauncherSettings.MAX_PINNED_APPS)
+            }
+            current.copy(pinnedPackages = updated)
+        }
+        return isNowPinned
     }
 }

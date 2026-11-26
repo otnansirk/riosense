@@ -1,5 +1,6 @@
 package id.bangsadigital.riosense.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -10,6 +11,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,6 +32,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -40,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,8 +58,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -65,19 +72,35 @@ import androidx.compose.ui.unit.sp
 import id.bangsadigital.riosense.R
 import id.bangsadigital.riosense.VoiceDashboardNavigation
 import id.bangsadigital.riosense.data.VehicleRepository
+import id.bangsadigital.riosense.launcher.InstalledAppsRepository
+import id.bangsadigital.riosense.model.DockDisplayMode
+import id.bangsadigital.riosense.model.DockPosition
+import id.bangsadigital.riosense.model.InstalledAppInfo
 import id.bangsadigital.riosense.model.KiaRioPaintColor
+import id.bangsadigital.riosense.model.LAUNCHER_PAGE_APPS
+import id.bangsadigital.riosense.model.LAUNCHER_PAGE_HOME
+import id.bangsadigital.riosense.model.LAUNCHER_PAGE_WIDGETS
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.MaintenanceStatus
 import id.bangsadigital.riosense.model.TopBarBrandLogo
 import id.bangsadigital.riosense.model.VehicleTelemetry
 import id.bangsadigital.riosense.model.VoiceButtonStyle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import id.bangsadigital.riosense.ui.components.AppDrawerBackgroundCanvas
 import id.bangsadigital.riosense.ui.components.ControlsMenuSheet
 import id.bangsadigital.riosense.ui.components.ControlsTab
+import id.bangsadigital.riosense.ui.components.InAppObsidianDock
 import id.bangsadigital.riosense.ui.components.KiaRioInteractiveStage
+import id.bangsadigital.riosense.ui.components.LauncherAppDrawerHeader
+import id.bangsadigital.riosense.ui.components.LauncherAppDrawerPage
+import id.bangsadigital.riosense.ui.components.LauncherWidgetsPage
 import id.bangsadigital.riosense.ui.components.LeftSpeedAndSecurityPanel
 import id.bangsadigital.riosense.ui.components.MinimizedFloatingPillView
 import id.bangsadigital.riosense.ui.components.RightEngineTelemetryPanel
@@ -93,32 +116,43 @@ import id.bangsadigital.riosense.voice.VoiceUiState
  */
 private const val SHOW_SIMULATOR_TOOLS = true
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun RioSenseDashboardScreen(
     telemetry: VehicleTelemetry,
     repository: VehicleRepository,
     voiceUiState: VoiceUiState,
     voiceNavigation: VoiceDashboardNavigation?,
+    requestedLauncherPage: Pair<Int, Long>? = null,
+    hasOverlayPermission: Boolean = false,
+    onRequestOverlayPermission: () -> Unit = {},
+    onOpenHomeLauncherSettings: () -> Unit = {},
     onToggleVoiceListening: () -> Unit,
     onDismissVoiceFeedback: () -> Unit,
     onEnterPipMode: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val s = appStrings()
     var showSimulatorDrawer by remember { mutableStateOf(false) }
     var showControlsDrawer by remember { mutableStateOf(false) }
     var controlsInitialTab by remember { mutableStateOf<ControlsTab?>(null) }
+    var isCarDragging by remember { mutableStateOf(false) }
 
-    LaunchedEffect(voiceNavigation) {
-        when (voiceNavigation) {
-            is VoiceDashboardNavigation.OpenControls -> {
-                showSimulatorDrawer = false
-                controlsInitialTab = voiceNavigation.tab
-                showControlsDrawer = true
-            }
-            is VoiceDashboardNavigation.CloseMenus -> {
-                showSimulatorDrawer = false
-                showControlsDrawer = false
-            }
-            null -> Unit
+    var installedApps by remember { mutableStateOf<List<InstalledAppInfo>>(emptyList()) }
+    var appSearchQuery by remember { mutableStateOf("") }
+    var pinFeedback by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        installedApps = withContext(Dispatchers.IO) {
+            InstalledAppsRepository.loadInstalledApps(context)
+        }
+    }
+
+    LaunchedEffect(pinFeedback) {
+        if (pinFeedback != null) {
+            delay(2600L)
+            pinFeedback = null
         }
     }
 
@@ -128,6 +162,7 @@ fun RioSenseDashboardScreen(
     val maintenance by repository.maintenance.collectAsState()
     val tripHistory by repository.tripHistory.collectAsState()
     val activeTrip by repository.activeTrip.collectAsState()
+    val launcherSettings by repository.launcherSettings.collectAsState()
     val dueServiceItems = remember(maintenance) { maintenance.dueOrOverdueItems() }
 
     if (telemetry.isMinimized) {
@@ -144,104 +179,336 @@ fun RioSenseDashboardScreen(
         return
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(ObsidianColors.DeepObsidian)
-            .padding(horizontal = 18.dp, vertical = 12.dp)
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            // 1. BORDERLESS OEM TOP BAR
-            TopObsidianBar(
-                telemetry = telemetry,
-                showSimulatorEntry = SHOW_SIMULATOR_TOOLS && telemetry.simulatorMode,
-                hasServiceReminder = dueServiceItems.isNotEmpty(),
-                isVoiceListening = voiceUiState.isListening,
-                activeTripKm = if (telemetry.tripRecordingEnabled) activeTrip?.distanceKm else null,
-                onSelectPaint = { repository.setPaintColor(it) },
-                onToggleVoiceListening = onToggleVoiceListening,
-                onToggleTripRecording = {
-                    repository.setTripRecordingEnabled(!telemetry.tripRecordingEnabled)
-                },
-                onToggleMute = { repository.toggleAudioMute() },
-                onOpenSimulator = {
-                    showControlsDrawer = false
-                    showSimulatorDrawer = !showSimulatorDrawer
-                },
-                onOpenControls = {
-                    showSimulatorDrawer = false
-                    controlsInitialTab = null
-                    showControlsDrawer = !showControlsDrawer
-                },
-                onMinimize = { repository.setMinimized(true) }
-            )
+        val availGridW = (maxWidth - 48.dp).coerceAtLeast(280.dp)
+        val availGridH = (maxHeight - 134.dp).coerceAtLeast(160.dp)
+        val appGridCols = (availGridW / launcherSettings.appIconSize.cellWidthDp.dp).toInt().coerceAtLeast(3)
+        val appGridRows = (availGridH / launcherSettings.appIconSize.cellHeightDp.dp).toInt().coerceAtLeast(2)
+        val appsPerPage = (appGridCols * appGridRows).coerceAtLeast(6)
 
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // 2. SEAMLESS 3-COLUMN STAGE (Zero borders on Speed, Car Stage, and Engine Telemetry)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                LeftSpeedAndSecurityPanel(
-                    telemetry = telemetry,
-                    onToggleLock = { repository.toggleCentralLock() },
-                    modifier = Modifier.weight(0.26f)
-                )
-
-                KiaRioInteractiveStage(
-                    telemetry = telemetry,
-                    onToggleDoor = { doorCode -> repository.toggleDoor(doorCode) },
-                    modifier = Modifier
-                        .weight(0.48f)
-                        .fillMaxHeight()
-                )
-
-                RightEngineTelemetryPanel(
-                    telemetry = telemetry,
-                    modifier = Modifier.weight(0.26f)
-                )
+        val filteredApps = remember(installedApps, appSearchQuery) {
+            val q = appSearchQuery.trim().lowercase()
+            if (q.isEmpty()) installedApps
+            else installedApps.filter {
+                it.label.lowercase().contains(q) || it.packageName.lowercase().contains(q)
             }
+        }
+        val appChunks = remember(filteredApps, appsPerPage) {
+            filteredApps.chunked(appsPerPage).ifEmpty { listOf(emptyList()) }
+        }
+        val totalPages = 2 + appChunks.size
 
-            Spacer(modifier = Modifier.height(6.dp))
+        val pagerState = rememberPagerState(
+            initialPage = LAUNCHER_PAGE_HOME,
+            pageCount = { totalPages }
+        )
 
-            // 3. BORDERLESS MINIMALIST STATUS FOOTER (Live Alerts > Service Reminders > Nominal)
-            BottomAlertBanner(
-                telemetry = telemetry,
-                maintenance = maintenance,
-                onAcknowledgeOrFix = { repository.applyNormalPreset() },
-                onOpenServiceReminders = {
+        LaunchedEffect(totalPages) {
+            if (pagerState.currentPage >= totalPages) {
+                pagerState.scrollToPage((totalPages - 1).coerceAtLeast(0))
+            }
+        }
+
+        LaunchedEffect(appSearchQuery) {
+            if (appSearchQuery.isNotEmpty() && pagerState.currentPage > LAUNCHER_PAGE_APPS) {
+                pagerState.animateScrollToPage(LAUNCHER_PAGE_APPS)
+            }
+        }
+
+        LaunchedEffect(requestedLauncherPage, totalPages) {
+            val target = requestedLauncherPage?.first ?: return@LaunchedEffect
+            showSimulatorDrawer = false
+            showControlsDrawer = false
+            pagerState.animateScrollToPage(target.coerceIn(LAUNCHER_PAGE_WIDGETS, totalPages - 1))
+        }
+
+        LaunchedEffect(voiceNavigation) {
+            when (voiceNavigation) {
+                is VoiceDashboardNavigation.OpenControls -> {
                     showSimulatorDrawer = false
-                    controlsInitialTab = ControlsTab.SERVICE
+                    controlsInitialTab = voiceNavigation.tab
                     showControlsDrawer = true
                 }
+                is VoiceDashboardNavigation.CloseMenus -> {
+                    showSimulatorDrawer = false
+                    showControlsDrawer = false
+                }
+                null -> Unit
+            }
+        }
+
+        BackHandler(enabled = showSimulatorDrawer || showControlsDrawer || pagerState.currentPage != LAUNCHER_PAGE_HOME) {
+            when {
+                showSimulatorDrawer -> showSimulatorDrawer = false
+                showControlsDrawer -> showControlsDrawer = false
+                pagerState.currentPage != LAUNCHER_PAGE_HOME -> {
+                    scope.launch { pagerState.animateScrollToPage(LAUNCHER_PAGE_HOME) }
+                }
+            }
+        }
+
+        val absolutePage = pagerState.currentPage + pagerState.currentPageOffsetFraction
+        val drawerReveal = (absolutePage - 1f).coerceIn(0f, 1f)
+        val screenWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
+
+        // Stationary procedural monochrome luxury Canvas background behind App Drawer pages (Apps 1..N)
+        if (absolutePage > 1.001f) {
+            AppDrawerBackgroundCanvas(
+                preset = launcherSettings.appDrawerBackground,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = (1f - drawerReveal) * screenWidthPx
+                        alpha = drawerReveal
+                    }
             )
         }
 
-        // 3b. FLOATING OBSIDIAN VOICE COMMAND OVERLAY (Frequency Wave raised cleanly above bottom bar; Feedback Card at bottom)
-        if (voiceUiState.isListening || voiceUiState.feedbackCard != null) {
-            val bottomOffset = if (voiceUiState.isListening) 86.dp else 46.dp
-            VoiceCommandFloatingOverlay(
-                voiceUiState = voiceUiState,
-                onStopListening = onToggleVoiceListening,
-                onDismissCard = onDismissVoiceFeedback,
+        HorizontalPager(
+            state = pagerState,
+            userScrollEnabled = !isCarDragging && !showControlsDrawer && !showSimulatorDrawer,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            when (page) {
+                LAUNCHER_PAGE_WIDGETS -> {
+                    LauncherWidgetsPage(
+                        telemetry = telemetry,
+                        maintenance = maintenance,
+                        onOpenControlsTab = { tab ->
+                            showSimulatorDrawer = false
+                            controlsInitialTab = tab
+                            showControlsDrawer = true
+                        },
+                        onBackToHome = {
+                            scope.launch { pagerState.animateScrollToPage(LAUNCHER_PAGE_HOME) }
+                        }
+                    )
+                }
+
+                LAUNCHER_PAGE_HOME -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 18.dp, vertical = 12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            // 1. BORDERLESS OEM TOP BAR
+                            TopObsidianBar(
+                                telemetry = telemetry,
+                                showSimulatorEntry = SHOW_SIMULATOR_TOOLS && telemetry.simulatorMode,
+                                hasServiceReminder = dueServiceItems.isNotEmpty(),
+                                isVoiceListening = voiceUiState.isListening,
+                                activeTripKm = if (telemetry.tripRecordingEnabled) activeTrip?.distanceKm else null,
+                                onSelectPaint = { repository.setPaintColor(it) },
+                                onToggleVoiceListening = onToggleVoiceListening,
+                                onToggleTripRecording = {
+                                    repository.setTripRecordingEnabled(!telemetry.tripRecordingEnabled)
+                                },
+                                onToggleMute = { repository.toggleAudioMute() },
+                                onOpenSimulator = {
+                                    showControlsDrawer = false
+                                    showSimulatorDrawer = !showSimulatorDrawer
+                                },
+                                onOpenControls = {
+                                    showSimulatorDrawer = false
+                                    controlsInitialTab = null
+                                    showControlsDrawer = !showControlsDrawer
+                                },
+                                onMinimize = { repository.setMinimized(true) }
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // 2. SEAMLESS 3-COLUMN STAGE (Zero borders on Speed, Car Stage, and Engine Telemetry)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                LeftSpeedAndSecurityPanel(
+                                    telemetry = telemetry,
+                                    onToggleLock = { repository.toggleCentralLock() },
+                                    modifier = Modifier.weight(0.26f)
+                                )
+
+                                KiaRioInteractiveStage(
+                                    telemetry = telemetry,
+                                    onToggleDoor = { doorCode -> repository.toggleDoor(doorCode) },
+                                    onDragStateChanged = { isCarDragging = it },
+                                    modifier = Modifier
+                                        .weight(0.48f)
+                                        .fillMaxHeight()
+                                )
+
+                                RightEngineTelemetryPanel(
+                                    telemetry = telemetry,
+                                    modifier = Modifier.weight(0.26f)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // 3. BORDERLESS MINIMALIST STATUS FOOTER (Live Alerts > Service Reminders > Nominal)
+                            BottomAlertBanner(
+                                telemetry = telemetry,
+                                maintenance = maintenance,
+                                onAcknowledgeOrFix = { repository.applyNormalPreset() },
+                                onOpenServiceReminders = {
+                                    showSimulatorDrawer = false
+                                    controlsInitialTab = ControlsTab.SERVICE
+                                    showControlsDrawer = true
+                                }
+                            )
+                        }
+
+                        // 3b. FLOATING OBSIDIAN VOICE COMMAND OVERLAY
+                        if (voiceUiState.isListening || voiceUiState.feedbackCard != null) {
+                            val bottomOffset = if (voiceUiState.isListening) 86.dp else 46.dp
+                            VoiceCommandFloatingOverlay(
+                                voiceUiState = voiceUiState,
+                                onStopListening = onToggleVoiceListening,
+                                onDismissCard = onDismissVoiceFeedback,
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = bottomOffset)
+                            )
+                        }
+
+                        // 3c. OPTIONAL ASSISTIVETOUCH-STYLE FLOATING GLASS MIC BUTTON
+                        if (telemetry.voiceButtonStyle == VoiceButtonStyle.FLOATING) {
+                            FloatingGlassMicButton(
+                                isListening = voiceUiState.isListening,
+                                onClick = onToggleVoiceListening
+                            )
+                        }
+                    }
+                }
+
+                else -> {
+                    val appPageIdx = (page - LAUNCHER_PAGE_APPS).coerceIn(0, appChunks.lastIndex)
+                    LauncherAppDrawerPage(
+                        pageApps = appChunks[appPageIdx],
+                        totalAppCount = filteredApps.size,
+                        hasSearchQuery = appSearchQuery.isNotEmpty(),
+                        columns = appGridCols,
+                        rows = appGridRows,
+                        iconSize = launcherSettings.appIconSize,
+                        pinnedPackages = launcherSettings.pinnedPackages,
+                        onTogglePinApp = { app ->
+                            val pinnedNow = repository.togglePinnedDockApp(app.packageName)
+                            pinFeedback = if (pinnedNow) {
+                                s.pinnedToDockFeedback(app.label)
+                            } else {
+                                s.unpinnedFromDockFeedback(app.label)
+                            }
+                        }
+                    )
+                }
+            }
+        }
+
+        // Stationary App Drawer header (slides cleanly from Home -> Apps, remains locked across Apps 1..N)
+        if (absolutePage > 1.001f) {
+            val currentAppPageIdx = (pagerState.currentPage - LAUNCHER_PAGE_APPS).coerceIn(0, appChunks.lastIndex)
+            LauncherAppDrawerHeader(
+                totalAppCount = filteredApps.size,
+                appPageIndex = currentAppPageIdx,
+                totalAppPages = appChunks.size,
+                searchQuery = appSearchQuery,
+                onSearchQueryChange = { appSearchQuery = it },
+                onOpenSettings = {
+                    showSimulatorDrawer = false
+                    controlsInitialTab = ControlsTab.SETTINGS
+                    showControlsDrawer = true
+                },
+                onBackToHome = {
+                    scope.launch { pagerState.animateScrollToPage(LAUNCHER_PAGE_HOME) }
+                },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        translationX = (1f - drawerReveal) * screenWidthPx
+                        alpha = drawerReveal
+                    }
+                    .padding(horizontal = 24.dp, vertical = 14.dp)
+            )
+        }
+
+        // Dynamic bottom page indicator (Widgets · Home · Apps 1..N)
+        val alwaysVisibleBottomDock = !hasOverlayPermission &&
+            launcherSettings.dockEnabled &&
+            launcherSettings.dockDisplayMode == DockDisplayMode.ALWAYS_VISIBLE &&
+            launcherSettings.dockPosition == DockPosition.BOTTOM
+        val indicatorBottomPadding = if (alwaysVisibleBottomDock) 64.dp else 6.dp
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = indicatorBottomPadding),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            (0 until totalPages).forEach { pageIndex ->
+                val active = pagerState.currentPage == pageIndex
+                Box(
+                    modifier = Modifier
+                        .size(width = if (active) 16.dp else 6.dp, height = 5.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (active) ObsidianColors.PureSilver
+                            else ObsidianColors.DimSilver.copy(alpha = 0.65f)
+                        )
+                        .clickable {
+                            scope.launch { pagerState.animateScrollToPage(pageIndex) }
+                        }
+                )
+            }
+        }
+
+        // In-app Obsidian Dock fallback when global overlay permission is not granted yet
+        if (launcherSettings.dockEnabled && !hasOverlayPermission) {
+            InAppObsidianDock(
+                settings = launcherSettings,
+                onGoHome = {
+                    scope.launch { pagerState.animateScrollToPage(LAUNCHER_PAGE_HOME) }
+                },
+                onOpenApps = {
+                    scope.launch { pagerState.animateScrollToPage(LAUNCHER_PAGE_APPS) }
+                },
+                onLaunchApp = { pkg -> InstalledAppsRepository.launchApp(context, pkg) }
+            )
+        }
+
+        // Consistent single-line Obsidian floating notification card matching VoiceCommandFloatingOverlay
+        pinFeedback?.let { message ->
+            Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = bottomOffset)
-            )
-        }
-
-        // 3c. OPTIONAL ASSISTIVETOUCH-STYLE FLOATING GLASS MIC BUTTON (Draggable with Edge Snap)
-        if (telemetry.voiceButtonStyle == VoiceButtonStyle.FLOATING) {
-            FloatingGlassMicButton(
-                isListening = voiceUiState.isListening,
-                onClick = onToggleVoiceListening
-            )
+                    .padding(bottom = if (alwaysVisibleBottomDock) 74.dp else 46.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xEB11141B))
+                    .border(0.8.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(14.dp))
+                    .clickable { pinFeedback = null }
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = message,
+                    color = ObsidianColors.PureSilver,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
 
         // 4. SIMULATOR SHEET (Opened from top-left "Simulator" badge; easily hidden via SHOW_SIMULATOR_TOOLS)
@@ -307,6 +574,15 @@ fun RioSenseDashboardScreen(
                     onRoadEffectEnabledChange = { enabled ->
                         repository.setRoadEffectEnabled(enabled)
                     },
+                    launcherSettings = launcherSettings,
+                    hasOverlayPermission = hasOverlayPermission,
+                    onDockEnabledChange = { enabled -> repository.setDockEnabled(enabled) },
+                    onDockDisplayModeChange = { mode -> repository.setDockDisplayMode(mode) },
+                    onDockPositionChange = { pos -> repository.setDockPosition(pos) },
+                    onAppIconSizeChange = { size -> repository.setAppIconSize(size) },
+                    onAppDrawerBackgroundChange = { bg -> repository.setAppDrawerBackground(bg) },
+                    onRequestOverlayPermission = onRequestOverlayPermission,
+                    onOpenHomeLauncherSettings = onOpenHomeLauncherSettings,
                     initialTab = controlsInitialTab,
                     tripHistory = tripHistory,
                     activeTrip = activeTrip,

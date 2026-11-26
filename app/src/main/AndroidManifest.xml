@@ -5,8 +5,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Floating overlay permission when minimized over Maps / Spotify -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- Foreground service permission for OBD-II telemetry & alarms -->
+    <!-- Foreground service permission for OBD-II telemetry, alarms & global dock -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Microphone permission for RioSense Voice Command -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Network state & Internet permissions for Online/Offline Voice Auto-Switch & Dark Map Tiles -->
@@ -50,11 +51,14 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
             android:exported="true"
             android:launchMode="singleTask"
+            android:resizeableActivity="true"
             android:screenOrientation="sensorLandscape"
             android:supportsPictureInPicture="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
             <!-- Auto-Open saat Kabel OBD2 USB terdeteksi menyala -->
@@ -79,6 +83,16 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- Global macOS-style Obsidian Quick-Access Dock Overlay -->
+        <service
+            android:name=".launcher.GlobalDockOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Global automotive quick-access dock overlay" />
+        </service>
 
     </application>
 

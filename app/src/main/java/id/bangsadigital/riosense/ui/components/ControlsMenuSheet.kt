@@ -61,7 +61,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import id.bangsadigital.riosense.R
+import id.bangsadigital.riosense.launcher.InstalledAppsRepository
 import id.bangsadigital.riosense.model.ActiveTripState
+import id.bangsadigital.riosense.model.AppDrawerBackground
+import id.bangsadigital.riosense.model.AppIconSize
+import id.bangsadigital.riosense.model.DockDisplayMode
+import id.bangsadigital.riosense.model.DockPosition
+import id.bangsadigital.riosense.model.LauncherSettings
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.MaintenanceStatus
 import id.bangsadigital.riosense.model.ObdActivityEntry
@@ -103,6 +109,15 @@ fun ControlsMenuSheet(
     onTripRecordingEnabledChange: (Boolean) -> Unit,
     onTopBarBrandLogoChange: (TopBarBrandLogo) -> Unit,
     onRoadEffectEnabledChange: (Boolean) -> Unit,
+    launcherSettings: LauncherSettings,
+    hasOverlayPermission: Boolean,
+    onDockEnabledChange: (Boolean) -> Unit,
+    onDockDisplayModeChange: (DockDisplayMode) -> Unit,
+    onDockPositionChange: (DockPosition) -> Unit,
+    onAppIconSizeChange: (AppIconSize) -> Unit,
+    onAppDrawerBackgroundChange: (AppDrawerBackground) -> Unit,
+    onRequestOverlayPermission: () -> Unit,
+    onOpenHomeLauncherSettings: () -> Unit,
     initialTab: ControlsTab? = null,
     tripHistory: List<TripRecord>,
     activeTrip: ActiveTripState?,
@@ -479,6 +494,15 @@ fun ControlsMenuSheet(
                     onTripRecordingEnabledChange = onTripRecordingEnabledChange,
                     onTopBarBrandLogoChange = onTopBarBrandLogoChange,
                     onRoadEffectEnabledChange = onRoadEffectEnabledChange,
+                    launcherSettings = launcherSettings,
+                    hasOverlayPermission = hasOverlayPermission,
+                    onDockEnabledChange = onDockEnabledChange,
+                    onDockDisplayModeChange = onDockDisplayModeChange,
+                    onDockPositionChange = onDockPositionChange,
+                    onAppIconSizeChange = onAppIconSizeChange,
+                    onAppDrawerBackgroundChange = onAppDrawerBackgroundChange,
+                    onRequestOverlayPermission = onRequestOverlayPermission,
+                    onOpenHomeLauncherSettings = onOpenHomeLauncherSettings,
                     onSpeedLockThresholdChange = onSpeedLockThresholdChange,
                     onTpmsLowPsiChange = onTpmsLowPsiChange,
                     onTpmsHighPsiChange = onTpmsHighPsiChange,
@@ -1350,6 +1374,15 @@ private fun AlarmSettingsView(
     onTripRecordingEnabledChange: (Boolean) -> Unit,
     onTopBarBrandLogoChange: (TopBarBrandLogo) -> Unit,
     onRoadEffectEnabledChange: (Boolean) -> Unit,
+    launcherSettings: LauncherSettings,
+    hasOverlayPermission: Boolean,
+    onDockEnabledChange: (Boolean) -> Unit,
+    onDockDisplayModeChange: (DockDisplayMode) -> Unit,
+    onDockPositionChange: (DockPosition) -> Unit,
+    onAppIconSizeChange: (AppIconSize) -> Unit,
+    onAppDrawerBackgroundChange: (AppDrawerBackground) -> Unit,
+    onRequestOverlayPermission: () -> Unit,
+    onOpenHomeLauncherSettings: () -> Unit,
     onSpeedLockThresholdChange: (Int) -> Unit,
     onTpmsLowPsiChange: (Float) -> Unit,
     onTpmsHighPsiChange: (Float) -> Unit,
@@ -1843,6 +1876,357 @@ private fun AlarmSettingsView(
                     }
                 }
             )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Grouped Launcher & Global Dock Container
+        val isDefaultHome = remember(launcherSettings, hasOverlayPermission) {
+            InstalledAppsRepository.isRioSenseDefaultLauncher(context)
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(ObsidianColors.ObsidianPanel)
+                .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            Text(
+                text = s.launcherSectionTitle,
+                color = ObsidianColors.DimSilver,
+                fontSize = 9.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.7.sp,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+
+            // 1. Global Dock On / Off
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = s.globalDockLabel,
+                    color = ObsidianColors.PureSilver,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f)
+                )
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF0E1015))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf(true to s.onLabel, false to s.offLabel).forEach { (enabled, label) ->
+                        val selected = launcherSettings.dockEnabled == enabled
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                                .clickable { onDockEnabledChange(enabled) }
+                                .padding(horizontal = 11.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = label,
+                                color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                                fontSize = 10.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (launcherSettings.dockEnabled) {
+                SettingsHairlineDivider()
+
+                // 2. Display Mode: Always | Edge Swipe (4 sides)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = s.dockModeLabel,
+                        color = ObsidianColors.PureSilver,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF0E1015))
+                            .padding(3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        listOf(
+                            DockDisplayMode.ALWAYS_VISIBLE to s.dockModeAlways,
+                            DockDisplayMode.AUTO_HIDE_SWIPE to s.dockModeAutoHide
+                        ).forEach { (mode, label) ->
+                            val selected = launcherSettings.dockDisplayMode == mode
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                                    .clickable { onDockDisplayModeChange(mode) }
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+
+                SettingsHairlineDivider()
+
+                // 3. Position selector (when Always) or 4-edge hint (when Auto-Hide)
+                if (launcherSettings.dockDisplayMode == DockDisplayMode.ALWAYS_VISIBLE) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = s.dockPositionLabel,
+                            color = ObsidianColors.PureSilver,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF0E1015))
+                                .padding(3.dp),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            listOf(
+                                DockPosition.BOTTOM to s.dockPosBottom,
+                                DockPosition.TOP to s.dockPosTop,
+                                DockPosition.LEFT to s.dockPosLeft,
+                                DockPosition.RIGHT to s.dockPosRight
+                            ).forEach { (pos, label) ->
+                                val selected = launcherSettings.dockPosition == pos
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                                        .clickable { onDockPositionChange(pos) }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                                        fontSize = 9.5.sp,
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        text = s.dockSwipeAnyEdgeHint,
+                        color = ObsidianColors.CobaltAccent,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
+
+                SettingsHairlineDivider()
+
+                // 4. Global Overlay Permission Row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = s.overlayPermissionLabel,
+                        color = ObsidianColors.PureSilver,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(if (hasOverlayPermission) Color(0xFF152820) else Color(0xFF1D2430))
+                            .clickable { onRequestOverlayPermission() }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = if (hasOverlayPermission) s.overlayPermissionGranted else s.overlayPermissionAction,
+                            color = if (hasOverlayPermission) ObsidianColors.EmeraldNominal else ObsidianColors.CobaltAccent,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            SettingsHairlineDivider()
+
+            // 5. App Drawer Icon Size (Small | Medium | Large)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = s.appIconSizeLabel,
+                    color = ObsidianColors.PureSilver,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f)
+                )
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF0E1015))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf(
+                        AppIconSize.SMALL to s.iconSizeSmall,
+                        AppIconSize.MEDIUM to s.iconSizeMedium,
+                        AppIconSize.LARGE to s.iconSizeLarge
+                    ).forEach { (size, label) ->
+                        val selected = launcherSettings.appIconSize == size
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (selected) Color(0xFF212836) else Color.Transparent)
+                                .clickable { onAppIconSizeChange(size) }
+                                .padding(horizontal = 9.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = label,
+                                color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                                fontSize = 9.5.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+
+            SettingsHairlineDivider()
+
+            // 6. App Drawer Background Preset Selector with Live Monochrome Canvas Previews
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = s.appDrawerBgLabel,
+                    color = ObsidianColors.PureSilver,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        AppDrawerBackground.OBSIDIAN_PURE to s.bgObsidian,
+                        AppDrawerBackground.CARBON_WEAVE to s.bgCarbon,
+                        AppDrawerBackground.BRUSHED_TITANIUM to s.bgTitanium,
+                        AppDrawerBackground.TOPO_CONTOUR to s.bgContour,
+                        AppDrawerBackground.MONOLITH_GRID to s.bgPrism
+                    ).forEach { (preset, label) ->
+                        val selected = launcherSettings.appDrawerBackground == preset
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (selected) Color(0xFF1A202B) else Color(0xFF0A0C10))
+                                .border(
+                                    width = if (selected) 1.2.dp else 0.7.dp,
+                                    color = if (selected) ObsidianColors.PureSilver else ObsidianColors.ObsidianSubBorder,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .clickable { onAppDrawerBackgroundChange(preset) }
+                                .padding(4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            AppDrawerBackgroundCanvas(
+                                preset = preset,
+                                isPreview = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(26.dp)
+                                    .clip(RoundedCornerShape(5.dp))
+                            )
+                            Text(
+                                text = label,
+                                color = if (selected) ObsidianColors.PureSilver else ObsidianColors.DimSilver,
+                                fontSize = 9.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+
+            SettingsHairlineDivider()
+
+            // 7. Default Android Home Launcher Shortcut
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = s.defaultLauncherLabel,
+                    color = ObsidianColors.PureSilver,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f)
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(if (isDefaultHome) Color(0xFF152820) else Color(0xFF1D2430))
+                        .clickable { onOpenHomeLauncherSettings() }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        text = if (isDefaultHome) s.defaultLauncherActive else s.defaultLauncherAction,
+                        color = if (isDefaultHome) ObsidianColors.EmeraldNominal else ObsidianColors.PureSilver,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(10.dp))

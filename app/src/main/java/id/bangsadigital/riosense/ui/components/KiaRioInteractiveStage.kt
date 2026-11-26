@@ -103,6 +103,7 @@ private enum class CarViewMode(val label: String, val targetFrame: Float?) {
 fun KiaRioInteractiveStage(
     telemetry: VehicleTelemetry,
     onToggleDoor: (String) -> Unit,
+    onDragStateChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -252,6 +253,7 @@ fun KiaRioInteractiveStage(
         appContext.registerComponentCallbacks(trimCallbacks)
 
         onDispose {
+            onDragStateChanged(false)
             lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
             appContext.unregisterComponentCallbacks(trimCallbacks)
             synchronized(turntableCache) { turntableCache.evictAll() }
@@ -435,13 +437,18 @@ fun KiaRioInteractiveStage(
                 .pointerInput(rightOpenNow, leftOpenNow, trunkOpenNow) {
                     detectDragGestures(
                         onDragStart = {
+                            onDragStateChanged(true)
                             isUserDraggingTurntable = true
                             selectedViewMode = null
                         },
                         onDragEnd = {
+                            onDragStateChanged(false)
                             if (rightOpenNow || leftOpenNow || trunkOpenNow) {
                                 isUserDraggingTurntable = false
                             }
+                        },
+                        onDragCancel = {
+                            onDragStateChanged(false)
                         }
                     ) { change, dragAmount ->
                         change.consume()

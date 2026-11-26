@@ -3,11 +3,13 @@ package id.bangsadigital.riosense
 import android.Manifest
 import android.app.PictureInPictureParams
 import android.content.ComponentCallbacks2
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.SoundPool
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -26,6 +28,8 @@ import androidx.lifecycle.lifecycleScope
 import id.bangsadigital.riosense.audio.VoiceReminderEngine
 import id.bangsadigital.riosense.data.TripGpsTracker
 import id.bangsadigital.riosense.data.VehicleRepository
+import id.bangsadigital.riosense.launcher.GlobalDockOverlayService
+import id.bangsadigital.riosense.launcher.InstalledAppsRepository
 import id.bangsadigital.riosense.ui.RioSenseDashboardScreen
 import id.bangsadigital.riosense.ui.components.ControlsTab
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
@@ -57,6 +61,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var tripGpsTracker: TripGpsTracker
 
     private var voiceNavState by mutableStateOf<VoiceDashboardNavigation?>(null)
+    private var requestedLauncherPage by mutableStateOf<Pair<Int, Long>?>(null)
+    private var hasOverlayPermission by mutableStateOf(false)
+
+    companion object {
+        const val EXTRA_LAUNCHER_PAGE = "extra_launcher_page"
+    }
 
     private val micPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -97,13 +107,21 @@ class MainActivity : ComponentActivity() {
 
         // Keep the Head Unit screen awake while the ignition/app is active
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        hasOverlayPermission = Settings.canDrawOverlays(this)
+        handleLauncherPageIntent(intent)
 
         setContent {
             val telemetry by vehicleRepository.telemetry.collectAsState()
             val appLanguage by vehicleRepository.appLanguage.collectAsState()
+            val launcherSettings by vehicleRepository.launcherSettings.collectAsState()
             val engineOffTick by vehicleRepository.engineOffEventTick.collectAsState()
             val engineStartTick by vehicleRepository.engineStartEventTick.collectAsState()
             val voiceUiState by voiceCommandController.uiState.collectAsState()
+
+            // Sync Global Obsidian macOS Dock Service whenever dock config or overlay permission changes
+            LaunchedEffect(launcherSettings, hasOverlayPermission) {
+                GlobalDockOverlayService.sync(this@MainActivity, launcherSettings)
+            }
 
             // Preload authentic Kia Rio alarm chime once in SoundPool (~13 KB mono asset, <5ms latency)
             var alarmLoaded by remember { mutableStateOf(false) }
@@ -189,12 +207,39 @@ class MainActivity : ComponentActivity() {
                         repository = vehicleRepository,
                         voiceUiState = voiceUiState,
                         voiceNavigation = voiceNavState,
+                        requestedLauncherPage = requestedLauncherPage,
+                        hasOverlayPermission = hasOverlayPermission,
+                        onRequestOverlayPermission = {
+                            InstalledAppsRepository.openOverlayPermissionSettings(this@MainActivity)
+                        },
+                        onOpenHomeLauncherSettings = {
+                            InstalledAppsRepository.openHomeLauncherSettings(this@MainActivity)
+                        },
                         onToggleVoiceListening = { handleMicToggle() },
                         onDismissVoiceFeedback = { voiceCommandController.dismissFeedback() },
                         onEnterPipMode = { enterFloatingPipWindow() }
                     )
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleLauncherPageIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        hasOverlayPermission = Settings.canDrawOverlays(this)
+        GlobalDockOverlayService.sync(this, vehicleRepository.launcherSettings.value)
+    }
+
+    private fun handleLauncherPageIntent(intent: Intent?) {
+        val target = intent?.getIntExtra(EXTRA_LAUNCHER_PAGE, -1) ?: -1
+        if (target >= 0) {
+            requestedLauncherPage = target to System.currentTimeMillis()
         }
     }
 

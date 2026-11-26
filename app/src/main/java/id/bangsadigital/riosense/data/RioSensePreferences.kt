@@ -2,7 +2,13 @@ package id.bangsadigital.riosense.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import id.bangsadigital.riosense.launcher.InstalledAppsRepository
+import id.bangsadigital.riosense.model.AppDrawerBackground
+import id.bangsadigital.riosense.model.AppIconSize
+import id.bangsadigital.riosense.model.DockDisplayMode
+import id.bangsadigital.riosense.model.DockPosition
 import id.bangsadigital.riosense.model.KiaRioPaintColor
+import id.bangsadigital.riosense.model.LauncherSettings
 import id.bangsadigital.riosense.model.MaintenanceItem
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.ServiceRecord
@@ -55,6 +61,14 @@ class RioSensePreferences(context: Context) {
         private const val KEY_REMIND_KM = "maintenance_remind_km"
         private const val KEY_MAINTENANCE_ITEMS = "maintenance_items_json"
         private const val KEY_MAINTENANCE_STD_V2 = "maintenance_std_presets_v4"
+
+        private const val KEY_LAUNCHER_DOCK_ENABLED = "launcher_dock_enabled"
+        private const val KEY_LAUNCHER_DOCK_MODE = "launcher_dock_mode"
+        private const val KEY_LAUNCHER_DOCK_POSITION = "launcher_dock_position"
+        private const val KEY_LAUNCHER_DOCK_PINNED_JSON = "launcher_dock_pinned_json"
+        private const val KEY_LAUNCHER_DOCK_PINNED_INIT = "launcher_dock_pinned_init_v1"
+        private const val KEY_LAUNCHER_APP_ICON_SIZE = "launcher_app_icon_size"
+        private const val KEY_LAUNCHER_APP_DRAWER_BG = "launcher_app_drawer_bg"
     }
 
     private val appContext = context.applicationContext
@@ -406,5 +420,86 @@ class RioSensePreferences(context: Context) {
             }
             tripHistoryFile.writeText(arr.toString(), Charsets.UTF_8)
         }
+    }
+
+    fun loadLauncherSettings(): LauncherSettings {
+        val enabled = prefs.getBoolean(KEY_LAUNCHER_DOCK_ENABLED, true)
+        val mode = runCatching {
+            DockDisplayMode.valueOf(
+                prefs.getString(KEY_LAUNCHER_DOCK_MODE, DockDisplayMode.ALWAYS_VISIBLE.name)
+                    ?: DockDisplayMode.ALWAYS_VISIBLE.name
+            )
+        }.getOrDefault(DockDisplayMode.ALWAYS_VISIBLE)
+
+        val position = runCatching {
+            DockPosition.valueOf(
+                prefs.getString(KEY_LAUNCHER_DOCK_POSITION, DockPosition.BOTTOM.name)
+                    ?: DockPosition.BOTTOM.name
+            )
+        }.getOrDefault(DockPosition.BOTTOM)
+
+        val iconSize = runCatching {
+            AppIconSize.valueOf(
+                prefs.getString(KEY_LAUNCHER_APP_ICON_SIZE, AppIconSize.MEDIUM.name)
+                    ?: AppIconSize.MEDIUM.name
+            )
+        }.getOrDefault(AppIconSize.MEDIUM)
+
+        val drawerBg = runCatching {
+            AppDrawerBackground.valueOf(
+                prefs.getString(KEY_LAUNCHER_APP_DRAWER_BG, AppDrawerBackground.OBSIDIAN_PURE.name)
+                    ?: AppDrawerBackground.OBSIDIAN_PURE.name
+            )
+        }.getOrDefault(AppDrawerBackground.OBSIDIAN_PURE)
+
+        val initialized = prefs.getBoolean(KEY_LAUNCHER_DOCK_PINNED_INIT, false)
+        val pinned = if (!initialized) {
+            val defaults = InstalledAppsRepository.loadDefaultPinnedPackages(appContext)
+            val initial = LauncherSettings(
+                dockEnabled = enabled,
+                dockDisplayMode = mode,
+                dockPosition = position,
+                pinnedPackages = defaults,
+                appIconSize = iconSize,
+                appDrawerBackground = drawerBg
+            )
+            saveLauncherSettings(initial)
+            prefs.edit().putBoolean(KEY_LAUNCHER_DOCK_PINNED_INIT, true).apply()
+            defaults
+        } else {
+            val raw = prefs.getString(KEY_LAUNCHER_DOCK_PINNED_JSON, "[]") ?: "[]"
+            runCatching {
+                val arr = JSONArray(raw)
+                buildList {
+                    for (i in 0 until arr.length()) {
+                        val pkg = arr.optString(i, "").trim()
+                        if (pkg.isNotEmpty() && !contains(pkg)) add(pkg)
+                    }
+                }.take(LauncherSettings.MAX_PINNED_APPS)
+            }.getOrDefault(emptyList())
+        }
+
+        return LauncherSettings(
+            dockEnabled = enabled,
+            dockDisplayMode = mode,
+            dockPosition = position,
+            pinnedPackages = pinned,
+            appIconSize = iconSize,
+            appDrawerBackground = drawerBg
+        )
+    }
+
+    fun saveLauncherSettings(settings: LauncherSettings) {
+        val arr = JSONArray()
+        settings.pinnedPackages.take(LauncherSettings.MAX_PINNED_APPS).forEach { arr.put(it) }
+        prefs.edit()
+            .putBoolean(KEY_LAUNCHER_DOCK_ENABLED, settings.dockEnabled)
+            .putString(KEY_LAUNCHER_DOCK_MODE, settings.dockDisplayMode.name)
+            .putString(KEY_LAUNCHER_DOCK_POSITION, settings.dockPosition.name)
+            .putString(KEY_LAUNCHER_DOCK_PINNED_JSON, arr.toString())
+            .putString(KEY_LAUNCHER_APP_ICON_SIZE, settings.appIconSize.name)
+            .putString(KEY_LAUNCHER_APP_DRAWER_BG, settings.appDrawerBackground.name)
+            .putBoolean(KEY_LAUNCHER_DOCK_PINNED_INIT, true)
+            .apply()
     }
 }
