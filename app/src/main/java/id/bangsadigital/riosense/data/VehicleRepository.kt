@@ -733,6 +733,10 @@ class VehicleRepository(context: Context? = null) {
         }
     }
 
+    fun setTpmsSignalAvailable(available: Boolean) {
+        _telemetry.update { it.copy(tpmsSignalAvailable = available) }
+    }
+
     fun setTirePressure(code: String, psi: Float) {
         val prevTire = getTire(_telemetry.value.tpms, code)
         val clamped = psi.coerceIn(15.0f, 42.0f)
@@ -745,7 +749,7 @@ class VehicleRepository(context: Context? = null) {
                 "RR" -> t.copy(rearRight = t.rearRight.copy(pressurePsi = clamped))
                 else -> t
             }
-            state.copy(tpms = updated)
+            state.copy(tpms = updated, tpmsSignalAvailable = true)
         }
         val next = _telemetry.value
         val nextTire = getTire(next.tpms, code)
@@ -786,7 +790,7 @@ class VehicleRepository(context: Context? = null) {
                 "RR" -> t.copy(rearRight = t.rearRight.copy(tempC = clampedTemp))
                 else -> t
             }
-            state.copy(tpms = updated)
+            state.copy(tpms = updated, tpmsSignalAvailable = true)
         }
         val next = _telemetry.value
         val nextTire = getTire(next.tpms, code)
@@ -1416,6 +1420,7 @@ class VehicleRepository(context: Context? = null) {
                 gear = ObdCommandEngine.estimateManualGear(45, 2400),
                 centralLocked = false,
                 doors = DoorState(rearRightOpen = true),
+                tpmsSignalAvailable = true,
                 tpms = TpmsState(
                     frontLeft = TireInfo("FL", "Front Left", 32.0f, 34),
                     frontRight = TireInfo("FR", "Front Right", 32.0f, 35),

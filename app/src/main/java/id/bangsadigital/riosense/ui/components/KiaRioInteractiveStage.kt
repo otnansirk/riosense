@@ -687,39 +687,43 @@ fun KiaRioInteractiveStage(
             }
         }
 
-        // BORDERLESS MINIMALIST TPMS READOUTS & SLEEK DOOR MICRO-TRIGGERS
+        // BORDERLESS MINIMALIST TPMS READOUTS (AUTO-HIDE WHEN NO TPMS SIGNAL) & SLEEK DOOR MICRO-TRIGGERS
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(vertical = 4.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                TpmsMinimalReadout(
-                    tire = telemetry.tpms.frontLeft,
-                    telemetry = telemetry,
-                    blinkAlpha = pulseAlpha,
-                    alignRight = false
-                )
+            Box(modifier = Modifier.fillMaxWidth()) {
+                if (telemetry.tpmsSignalAvailable) {
+                    TpmsMinimalReadout(
+                        tire = telemetry.tpms.frontLeft,
+                        telemetry = telemetry,
+                        blinkAlpha = pulseAlpha,
+                        alignRight = false,
+                        modifier = Modifier.align(Alignment.TopStart)
+                    )
+                }
 
                 Text(
                     text = "Double-tap Reset",
                     color = Color(0xFF3E4452),
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(top = 2.dp)
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 2.dp)
                 )
 
-                TpmsMinimalReadout(
-                    tire = telemetry.tpms.frontRight,
-                    telemetry = telemetry,
-                    blinkAlpha = pulseAlpha,
-                    alignRight = true
-                )
+                if (telemetry.tpmsSignalAvailable) {
+                    TpmsMinimalReadout(
+                        tire = telemetry.tpms.frontRight,
+                        telemetry = telemetry,
+                        blinkAlpha = pulseAlpha,
+                        alignRight = true,
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    )
+                }
             }
 
             Row(
@@ -757,30 +761,34 @@ fun KiaRioInteractiveStage(
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                TpmsMinimalReadout(
-                    tire = telemetry.tpms.rearLeft,
-                    telemetry = telemetry,
-                    blinkAlpha = pulseAlpha,
-                    alignRight = false
-                )
+            Box(modifier = Modifier.fillMaxWidth()) {
+                if (telemetry.tpmsSignalAvailable) {
+                    TpmsMinimalReadout(
+                        tire = telemetry.tpms.rearLeft,
+                        telemetry = telemetry,
+                        blinkAlpha = pulseAlpha,
+                        alignRight = false,
+                        modifier = Modifier.align(Alignment.BottomStart)
+                    )
+                }
 
-                DoorMicroControl(
-                    label = "Trunk",
-                    isOpen = d.trunkOpen,
-                    onClick = { onToggleDoor("TRUNK") }
-                )
+                Box(modifier = Modifier.align(Alignment.BottomCenter)) {
+                    DoorMicroControl(
+                        label = "Trunk",
+                        isOpen = d.trunkOpen,
+                        onClick = { onToggleDoor("TRUNK") }
+                    )
+                }
 
-                TpmsMinimalReadout(
-                    tire = telemetry.tpms.rearRight,
-                    telemetry = telemetry,
-                    blinkAlpha = pulseAlpha,
-                    alignRight = true
-                )
+                if (telemetry.tpmsSignalAvailable) {
+                    TpmsMinimalReadout(
+                        tire = telemetry.tpms.rearRight,
+                        telemetry = telemetry,
+                        blinkAlpha = pulseAlpha,
+                        alignRight = true,
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                    )
+                }
             }
         }
         }
@@ -1044,7 +1052,8 @@ private fun TpmsMinimalReadout(
     tire: TireInfo,
     telemetry: VehicleTelemetry,
     blinkAlpha: Float,
-    alignRight: Boolean
+    alignRight: Boolean,
+    modifier: Modifier = Modifier
 ) {
     val isPressureAlert = tire.isPressureAlert(telemetry.tpmsLowThresholdPsi, telemetry.tpmsHighThresholdPsi)
     val isTempAlert = tire.isTempAlert(telemetry.tpmsHighTempC)
@@ -1056,6 +1065,7 @@ private fun TpmsMinimalReadout(
     val tempColor = if (isTempAlert) blinkingRed else ObsidianColors.DimSilver
 
     Row(
+        modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {

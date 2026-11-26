@@ -39,6 +39,7 @@ fun SimulatorAndSettingsSheet(
     onToggleDoor: (String) -> Unit,
     onToggleLock: () -> Unit,
     onToggleLight: (String) -> Unit,
+    onToggleTpmsSignal: (Boolean) -> Unit,
     onTirePressureChange: (String, Float) -> Unit,
     onTireTempChange: (String, Int) -> Unit,
     onPaintColorSelect: (KiaRioPaintColor) -> Unit,
@@ -364,30 +365,80 @@ fun SimulatorAndSettingsSheet(
             }
         }
 
-        // 5. TPMS & Speed Lock Threshold
-        Text(
-            text = "Rear-Left Tire Pressure ${String.format("%.1f", telemetry.tpms.rearLeft.pressurePsi)} psi",
-            color = ObsidianColors.MutedSilver,
-            fontSize = 11.sp
-        )
-        Slider(
-            value = telemetry.tpms.rearLeft.pressurePsi,
-            onValueChange = { onTirePressureChange("RL", it) },
-            valueRange = 18f..42f,
-            colors = monochromeSliderColors
-        )
+        // 5. External TPMS Receiver Signal & Tire Sliders
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "TPMS Sensor Signal",
+                color = ObsidianColors.MutedSilver,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF13151B))
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf(false to "No Signal", true to "Connected").forEach { (connected, label) ->
+                    val selected = telemetry.tpmsSignalAvailable == connected
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (selected) {
+                                    if (connected) Color(0xFF152820) else Color(0xFF212836)
+                                } else {
+                                    Color.Transparent
+                                }
+                            )
+                            .clickable { onToggleTpmsSignal(connected) }
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = label,
+                            color = when {
+                                selected && connected -> ObsidianColors.EmeraldNominal
+                                selected -> ObsidianColors.PureSilver
+                                else -> ObsidianColors.DimSilver
+                            },
+                            fontSize = 10.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
 
-        Text(
-            text = "Rear-Left Tire Temp ${telemetry.tpms.rearLeft.tempC}°C",
-            color = ObsidianColors.MutedSilver,
-            fontSize = 11.sp
-        )
-        Slider(
-            value = telemetry.tpms.rearLeft.tempC.toFloat(),
-            onValueChange = { onTireTempChange("RL", it.toInt()) },
-            valueRange = 25f..60f,
-            colors = monochromeSliderColors
-        )
+        if (telemetry.tpmsSignalAvailable) {
+            Text(
+                text = "Rear-Left Tire Pressure ${String.format("%.1f", telemetry.tpms.rearLeft.pressurePsi)} psi",
+                color = ObsidianColors.MutedSilver,
+                fontSize = 11.sp
+            )
+            Slider(
+                value = telemetry.tpms.rearLeft.pressurePsi,
+                onValueChange = { onTirePressureChange("RL", it) },
+                valueRange = 18f..42f,
+                colors = monochromeSliderColors
+            )
+
+            Text(
+                text = "Rear-Left Tire Temp ${telemetry.tpms.rearLeft.tempC}°C",
+                color = ObsidianColors.MutedSilver,
+                fontSize = 11.sp
+            )
+            Slider(
+                value = telemetry.tpms.rearLeft.tempC.toFloat(),
+                onValueChange = { onTireTempChange("RL", it.toInt()) },
+                valueRange = 25f..60f,
+                colors = monochromeSliderColors
+            )
+        }
 
         Text(
             text = "Battery Voltage ${String.format("%.1f", telemetry.batteryVoltage)} V",

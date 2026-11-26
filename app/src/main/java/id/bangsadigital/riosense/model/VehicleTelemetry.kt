@@ -130,6 +130,7 @@ data class VehicleTelemetry(
     val doors: DoorState = DoorState(),
     val lights: LightState = LightState(),
     val tpms: TpmsState = TpmsState(),
+    val tpmsSignalAvailable: Boolean = false,
     val paintColor: KiaRioPaintColor = KiaRioPaintColor.SNOW_WHITE_PEARL,
     val speedLockAlarmThresholdKmh: Int = DEFAULT_SPEED_LOCK_THRESHOLD_KMH,
     val tpmsLowThresholdPsi: Float = DEFAULT_TPMS_LOW_PSI,
@@ -188,7 +189,11 @@ data class VehicleTelemetry(
             kotlin.math.abs(batteryHighThresholdV - DEFAULT_BATTERY_HIGH_V) > 0.05f
 
     val alertTires: List<TireInfo>
-        get() = tpms.alertTires(tpmsLowThresholdPsi, tpmsHighThresholdPsi, tpmsHighTempC)
+        get() = if (tpmsSignalAvailable) {
+            tpms.alertTires(tpmsLowThresholdPsi, tpmsHighThresholdPsi, tpmsHighTempC)
+        } else {
+            emptyList()
+        }
 
     val hasAnyCriticalAlert: Boolean
         get() = doors.anyDoorOpen || isSpeedUnlockAlarm || isCoolantOverheat || isBatteryAlert || alertTires.isNotEmpty()

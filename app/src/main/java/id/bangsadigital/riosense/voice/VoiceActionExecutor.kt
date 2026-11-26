@@ -292,20 +292,35 @@ class VoiceActionExecutor(
             )
 
             StatusTopic.TIRES -> {
-                val t = telemetry.tpms
-                VoiceFeedbackCard(
-                    title = if (isId) "Status Ban (TPMS)" else "Tire Status (TPMS)",
-                    subtitle = if (telemetry.alertTires.isEmpty()) {
-                        if (isId) "Semua ban normal" else "All tires normal"
-                    } else {
-                        if (isId) "${telemetry.alertTires.size} ban perlu perhatian" else "${telemetry.alertTires.size} tire alert(s)"
-                    },
-                    detailLines = listOf(
-                        "FL ${String.format("%.1f", t.frontLeft.pressurePsi)} PSI (${t.frontLeft.tempC}°C)  ·  FR ${String.format("%.1f", t.frontRight.pressurePsi)} PSI (${t.frontRight.tempC}°C)",
-                        "RL ${String.format("%.1f", t.rearLeft.pressurePsi)} PSI (${t.rearLeft.tempC}°C)  ·  RR ${String.format("%.1f", t.rearRight.pressurePsi)} PSI (${t.rearRight.tempC}°C)"
-                    ),
-                    isError = telemetry.alertTires.isNotEmpty()
-                )
+                if (!telemetry.tpmsSignalAvailable) {
+                    VoiceFeedbackCard(
+                        title = if (isId) "Status Ban (TPMS)" else "Tire Status (TPMS)",
+                        subtitle = if (isId) "Sensor TPMS tidak terhubung" else "TPMS sensor not connected",
+                        detailLines = listOf(
+                            if (isId) {
+                                "Hubungkan receiver TPMS eksternal untuk memantau tekanan ban."
+                            } else {
+                                "Connect an external TPMS receiver to monitor tire pressure."
+                            }
+                        ),
+                        isError = false
+                    )
+                } else {
+                    val t = telemetry.tpms
+                    VoiceFeedbackCard(
+                        title = if (isId) "Status Ban (TPMS)" else "Tire Status (TPMS)",
+                        subtitle = if (telemetry.alertTires.isEmpty()) {
+                            if (isId) "Semua ban normal" else "All tires normal"
+                        } else {
+                            if (isId) "${telemetry.alertTires.size} ban perlu perhatian" else "${telemetry.alertTires.size} tire alert(s)"
+                        },
+                        detailLines = listOf(
+                            "FL ${String.format("%.1f", t.frontLeft.pressurePsi)} PSI (${t.frontLeft.tempC}°C)  ·  FR ${String.format("%.1f", t.frontRight.pressurePsi)} PSI (${t.frontRight.tempC}°C)",
+                            "RL ${String.format("%.1f", t.rearLeft.pressurePsi)} PSI (${t.rearLeft.tempC}°C)  ·  RR ${String.format("%.1f", t.rearRight.pressurePsi)} PSI (${t.rearRight.tempC}°C)"
+                        ),
+                        isError = telemetry.alertTires.isNotEmpty()
+                    )
+                }
             }
 
             StatusTopic.SERVICE -> VoiceFeedbackCard(
