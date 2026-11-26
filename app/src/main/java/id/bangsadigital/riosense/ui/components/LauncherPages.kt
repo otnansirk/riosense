@@ -34,12 +34,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,6 +55,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -71,6 +77,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -369,16 +376,15 @@ private fun WidgetStatCell(
 }
 
 /**
- * Stationary top header for the horizontally paged App Drawer (remains anchored when flipping
- * between App Drawer pages, while sliding smoothly during Home <-> Apps transitions).
+ * Stationary borderless top header for the horizontally paged App Drawer
+ * (remains anchored when flipping between App Drawer pages).
  */
 @Composable
 fun LauncherAppDrawerHeader(
     totalAppCount: Int,
     appPageIndex: Int,
     totalAppPages: Int,
-    searchQuery: String,
-    onSearchQueryChange: (String) -> Unit,
+    onOpenSearch: () -> Unit,
     onOpenSettings: () -> Unit,
     onBackToHome: () -> Unit,
     modifier: Modifier = Modifier
@@ -387,9 +393,9 @@ fun LauncherAppDrawerHeader(
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(modifier = Modifier.weight(0.33f)) {
+        Column(modifier = Modifier.weight(1f)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -421,58 +427,12 @@ fun LauncherAppDrawerHeader(
             )
         }
 
-        // Inline Search Box
-        Box(
-            modifier = Modifier
-                .weight(0.45f)
-                .clip(RoundedCornerShape(10.dp))
-                .background(ObsidianColors.ObsidianPanel)
-                .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(10.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            if (searchQuery.isEmpty()) {
-                Text(
-                    text = s.searchAppsPlaceholder,
-                    color = ObsidianColors.DimSilver,
-                    fontSize = 11.5.sp
-                )
-            }
-            BasicTextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                singleLine = true,
-                textStyle = TextStyle(
-                    color = ObsidianColors.PureSilver,
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Medium
-                ),
-                cursorBrush = SolidColor(ObsidianColors.CobaltAccent),
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        if (searchQuery.isNotEmpty()) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(ObsidianColors.ObsidianPanel)
-                    .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(8.dp))
-                    .clickable { onSearchQueryChange("") }
-                    .padding(horizontal = 10.dp, vertical = 7.dp)
-            ) {
-                Text(
-                    text = s.clear,
-                    color = ObsidianColors.MutedSilver,
-                    fontSize = 10.sp
-                )
-            }
-        }
-
-        // Top-Right Action Icons: Gear Settings (left of Home) + Home Icon
+        // Top-Right Borderless OEM Icons: Search + Settings Gear + Home
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            LauncherSearchIconButton(onClick = onOpenSearch)
             LauncherSettingsGearButton(onClick = onOpenSettings)
             LauncherHomeIconButton(onClick = onBackToHome)
         }
@@ -482,14 +442,12 @@ fun LauncherAppDrawerHeader(
 /**
  * Page 2+ (Swipe Left from Home): Horizontally paged Android Head Unit App Drawer
  * with no vertical scrolling, dynamic page overflow to the right, configurable icon sizing,
- * and a tilted champagne-gold pushpin on pinned apps.
+ * and a tilted pushpin on pinned apps.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LauncherAppDrawerPage(
     pageApps: List<InstalledAppInfo>,
-    totalAppCount: Int,
-    hasSearchQuery: Boolean,
     columns: Int,
     rows: Int,
     iconSize: AppIconSize,
@@ -511,7 +469,7 @@ fun LauncherAppDrawerPage(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (totalAppCount == 0 && !hasSearchQuery) s.loadingAppsLabel else s.noAppsFoundLabel,
+                    text = s.loadingAppsLabel,
                     color = ObsidianColors.DimSilver,
                     fontSize = 12.sp
                 )
@@ -636,6 +594,311 @@ fun LauncherAppDrawerPage(
     }
 }
 
+/**
+ * macOS Spotlight (Cmd+Space)-inspired centered floating search modal for the App Drawer.
+ * Auto-focuses a large search input in the upper-middle area and lists instant matches below.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun BoxScope.AppSpotlightSearchOverlay(
+    visible: Boolean,
+    allApps: List<InstalledAppInfo>,
+    pinnedPackages: List<String>,
+    onLaunchApp: (InstalledAppInfo) -> Unit,
+    onTogglePinApp: (InstalledAppInfo) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val s = appStrings()
+    var query by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(visible) {
+        if (visible) {
+            delay(60L)
+            runCatching { focusRequester.requestFocus() }
+        } else {
+            query = ""
+        }
+    }
+
+    val matches = remember(allApps, query) {
+        val q = query.trim().lowercase()
+        if (q.isEmpty()) emptyList()
+        else allApps.filter {
+            it.label.lowercase().contains(q) || it.packageName.lowercase().contains(q)
+        }
+    }
+
+    if (visible) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.58f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { onDismiss() }
+        )
+    }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(160)),
+        exit = fadeOut(tween(130)),
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .padding(top = 56.dp, start = 24.dp, end = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.62f)
+                .widthIn(max = 560.dp)
+                .shadow(
+                    elevation = 28.dp,
+                    shape = RoundedCornerShape(16.dp),
+                    ambientColor = Color.Black,
+                    spotColor = Color.Black
+                )
+                .clip(RoundedCornerShape(16.dp))
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color(0xF5151922), Color(0xF50E1118))
+                    )
+                )
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {}
+        ) {
+            // Large centered Spotlight search input row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Canvas(modifier = Modifier.size(20.dp)) {
+                    val w = size.width
+                    val h = size.height
+                    val stroke = 1.8.dp.toPx()
+                    val radius = w * 0.30f
+                    val center = Offset(w * 0.42f, h * 0.42f)
+                    drawCircle(
+                        color = ObsidianColors.MutedSilver,
+                        radius = radius,
+                        center = center,
+                        style = Stroke(width = stroke)
+                    )
+                    drawLine(
+                        color = ObsidianColors.MutedSilver,
+                        start = Offset(center.x + radius * 0.72f, center.y + radius * 0.72f),
+                        end = Offset(w * 0.86f, h * 0.86f),
+                        strokeWidth = stroke,
+                        cap = StrokeCap.Round
+                    )
+                }
+
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (query.isEmpty()) {
+                        Text(
+                            text = s.searchAppsPlaceholder,
+                            color = ObsidianColors.DimSilver,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
+                    BasicTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        singleLine = true,
+                        textStyle = TextStyle(
+                            color = ObsidianColors.PureSilver,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Normal
+                        ),
+                        cursorBrush = SolidColor(ObsidianColors.CobaltAccent),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(
+                            onSearch = {
+                                matches.firstOrNull()?.let { onLaunchApp(it) }
+                            }
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester)
+                    )
+                }
+
+                // Clear / Close X vector button
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .clickable {
+                            if (query.isNotEmpty()) query = "" else onDismiss()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Canvas(modifier = Modifier.size(12.dp)) {
+                        val w = size.width
+                        val h = size.height
+                        val stroke = 1.6.dp.toPx()
+                        drawLine(
+                            color = ObsidianColors.MutedSilver,
+                            start = Offset(w * 0.15f, h * 0.15f),
+                            end = Offset(w * 0.85f, h * 0.85f),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round
+                        )
+                        drawLine(
+                            color = ObsidianColors.MutedSilver,
+                            start = Offset(w * 0.85f, h * 0.15f),
+                            end = Offset(w * 0.15f, h * 0.85f),
+                            strokeWidth = stroke,
+                            cap = StrokeCap.Round
+                        )
+                    }
+                }
+            }
+
+            if (query.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(ObsidianColors.ObsidianHairline)
+                )
+
+                if (matches.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 18.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = s.noAppsFoundLabel,
+                            color = ObsidianColors.DimSilver,
+                            fontSize = 12.sp
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 220.dp)
+                    ) {
+                        items(matches, key = { it.packageName }) { app ->
+                            val isPinned = pinnedPackages.contains(app.packageName)
+                            val iconBitmap by produceState<ImageBitmap?>(
+                                initialValue = null,
+                                key1 = app.packageName
+                            ) {
+                                value = withContext(Dispatchers.IO) {
+                                    InstalledAppsRepository
+                                        .getAppIconBitmap(context, app.packageName, 128)
+                                        ?.asImageBitmap()
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .combinedClickable(
+                                        onClick = { onLaunchApp(app) },
+                                        onLongClick = { onTogglePinApp(app) }
+                                    )
+                                    .padding(horizontal = 16.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                if (iconBitmap != null) {
+                                    Image(
+                                        bitmap = iconBitmap!!,
+                                        contentDescription = app.label,
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(ObsidianColors.ObsidianPanel)
+                                    )
+                                }
+
+                                Text(
+                                    text = app.label,
+                                    color = ObsidianColors.PureSilver,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                if (isPinned) {
+                                    TiltedPinVectorIcon(modifier = Modifier.size(16.dp))
+                                }
+
+                                Text(
+                                    text = "›",
+                                    color = ObsidianColors.DimSilver,
+                                    fontSize = 15.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LauncherSearchIconButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(17.dp)) {
+            val w = size.width
+            val h = size.height
+            val stroke = 1.6.dp.toPx()
+            val tint = ObsidianColors.MutedSilver
+            val radius = w * 0.30f
+            val center = Offset(w * 0.42f, h * 0.42f)
+            drawCircle(
+                color = tint,
+                radius = radius,
+                center = center,
+                style = Stroke(width = stroke)
+            )
+            drawLine(
+                color = tint,
+                start = Offset(center.x + radius * 0.72f, center.y + radius * 0.72f),
+                end = Offset(w * 0.86f, h * 0.86f),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round
+            )
+        }
+    }
+}
+
 @Composable
 private fun LauncherHomeIconButton(
     onClick: () -> Unit,
@@ -643,14 +906,12 @@ private fun LauncherHomeIconButton(
 ) {
     Box(
         modifier = modifier
-            .size(32.dp)
-            .clip(RoundedCornerShape(9.dp))
-            .background(ObsidianColors.ObsidianPanel)
-            .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(9.dp))
+            .size(34.dp)
+            .clip(CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.size(16.dp)) {
+        Canvas(modifier = Modifier.size(17.dp)) {
             val w = size.width
             val h = size.height
             val p = Path().apply {
@@ -678,23 +939,20 @@ private fun LauncherSettingsGearButton(
 ) {
     Box(
         modifier = modifier
-            .size(32.dp)
-            .clip(RoundedCornerShape(9.dp))
-            .background(ObsidianColors.ObsidianPanel)
-            .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(9.dp))
+            .size(34.dp)
+            .clip(CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.size(15.dp)) {
+        Canvas(modifier = Modifier.size(17.dp)) {
             val w = size.width
             val h = size.height
             val cx = w * 0.5f
             val cy = h * 0.5f
-            val tint = ObsidianColors.PureSilver
-            val stroke = 1.4.dp.toPx()
-            val rRing = w * 0.30f
-            val rInner = w * 0.13f
-            val rToothIn = w * 0.34f
+            val tint = ObsidianColors.MutedSilver
+            val stroke = 1.45.dp.toPx()
+            val rRing = w * 0.28f
+            val rToothIn = w * 0.33f
             val rToothOut = w * 0.46f
 
             for (i in 0 until 8) {
@@ -705,7 +963,7 @@ private fun LauncherSettingsGearButton(
                     color = tint,
                     start = Offset(cx + cosA * rToothIn, cy + sinA * rToothIn),
                     end = Offset(cx + cosA * rToothOut, cy + sinA * rToothOut),
-                    strokeWidth = 1.7.dp.toPx(),
+                    strokeWidth = 1.65.dp.toPx(),
                     cap = StrokeCap.Round
                 )
             }
@@ -714,11 +972,6 @@ private fun LauncherSettingsGearButton(
                 radius = rRing,
                 center = Offset(cx, cy),
                 style = Stroke(width = stroke)
-            )
-            drawCircle(
-                color = ObsidianColors.ObsidianPanel,
-                radius = rInner,
-                center = Offset(cx, cy)
             )
         }
     }

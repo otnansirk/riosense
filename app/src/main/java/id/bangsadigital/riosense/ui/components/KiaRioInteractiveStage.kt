@@ -947,8 +947,7 @@ private fun CarViewSelectionBar(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF0B0C10))
-            .border(1.dp, ObsidianColors.MetallicBorder, RoundedCornerShape(10.dp))
+            .background(Color(0xB80E1016))
             .padding(horizontal = 4.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -959,14 +958,7 @@ private fun CarViewSelectionBar(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(7.dp))
-                    .background(if (isSelected) ObsidianColors.DarkGreyActive else Color.Transparent)
-                    .then(
-                        if (isSelected) {
-                            Modifier.border(0.8.dp, ObsidianColors.HighlightBorder, RoundedCornerShape(7.dp))
-                        } else {
-                            Modifier
-                        }
-                    )
+                    .background(if (isSelected) Color(0xCC212632) else Color.Transparent)
                     .clickable { onSelectMode(mode) }
                     .padding(vertical = 6.dp, horizontal = 4.dp),
                 horizontalArrangement = Arrangement.Center,

@@ -95,6 +95,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import id.bangsadigital.riosense.ui.components.AppDrawerBackgroundCanvas
 import id.bangsadigital.riosense.ui.components.AppDrawerBackgroundPickerOverlay
+import id.bangsadigital.riosense.ui.components.AppSpotlightSearchOverlay
 import id.bangsadigital.riosense.ui.components.ControlsMenuSheet
 import id.bangsadigital.riosense.ui.components.ControlsTab
 import id.bangsadigital.riosense.ui.components.InAppObsidianDock
@@ -138,11 +139,11 @@ fun RioSenseDashboardScreen(
     var showSimulatorDrawer by remember { mutableStateOf(false) }
     var showControlsDrawer by remember { mutableStateOf(false) }
     var showBackgroundPicker by remember { mutableStateOf(false) }
+    var showSpotlightSearch by remember { mutableStateOf(false) }
     var controlsInitialTab by remember { mutableStateOf<ControlsTab?>(null) }
     var isCarDragging by remember { mutableStateOf(false) }
 
     var installedApps by remember { mutableStateOf<List<InstalledAppInfo>>(emptyList()) }
-    var appSearchQuery by remember { mutableStateOf("") }
     var pinFeedback by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
@@ -192,15 +193,8 @@ fun RioSenseDashboardScreen(
         val appGridRows = (availGridH / launcherSettings.appIconSize.cellHeightDp.dp).toInt().coerceAtLeast(2)
         val appsPerPage = (appGridCols * appGridRows).coerceAtLeast(6)
 
-        val filteredApps = remember(installedApps, appSearchQuery) {
-            val q = appSearchQuery.trim().lowercase()
-            if (q.isEmpty()) installedApps
-            else installedApps.filter {
-                it.label.lowercase().contains(q) || it.packageName.lowercase().contains(q)
-            }
-        }
-        val appChunks = remember(filteredApps, appsPerPage) {
-            filteredApps.chunked(appsPerPage).ifEmpty { listOf(emptyList()) }
+        val appChunks = remember(installedApps, appsPerPage) {
+            installedApps.chunked(appsPerPage).ifEmpty { listOf(emptyList()) }
         }
         val totalPages = 2 + appChunks.size
 
@@ -215,14 +209,10 @@ fun RioSenseDashboardScreen(
             }
         }
 
-        LaunchedEffect(appSearchQuery) {
-            if (appSearchQuery.isNotEmpty() && pagerState.currentPage > LAUNCHER_PAGE_APPS) {
-                pagerState.animateScrollToPage(LAUNCHER_PAGE_APPS)
-            }
-        }
-
         LaunchedEffect(requestedLauncherPage, totalPages) {
             val target = requestedLauncherPage?.first ?: return@LaunchedEffect
+            showSpotlightSearch = false
+            showBackgroundPicker = false
             showSimulatorDrawer = false
             showControlsDrawer = false
             pagerState.animateScrollToPage(target.coerceIn(LAUNCHER_PAGE_WIDGETS, totalPages - 1))
@@ -231,11 +221,13 @@ fun RioSenseDashboardScreen(
         LaunchedEffect(voiceNavigation) {
             when (voiceNavigation) {
                 is VoiceDashboardNavigation.OpenControls -> {
+                    showSpotlightSearch = false
                     showSimulatorDrawer = false
                     controlsInitialTab = voiceNavigation.tab
                     showControlsDrawer = true
                 }
                 is VoiceDashboardNavigation.CloseMenus -> {
+                    showSpotlightSearch = false
                     showSimulatorDrawer = false
                     showControlsDrawer = false
                 }
@@ -244,9 +236,10 @@ fun RioSenseDashboardScreen(
         }
 
         BackHandler(
-            enabled = showBackgroundPicker || showSimulatorDrawer || showControlsDrawer || pagerState.currentPage != LAUNCHER_PAGE_HOME
+            enabled = showSpotlightSearch || showBackgroundPicker || showSimulatorDrawer || showControlsDrawer || pagerState.currentPage != LAUNCHER_PAGE_HOME
         ) {
             when {
+                showSpotlightSearch -> showSpotlightSearch = false
                 showBackgroundPicker -> showBackgroundPicker = false
                 showSimulatorDrawer -> showSimulatorDrawer = false
                 showControlsDrawer -> showControlsDrawer = false
@@ -275,7 +268,7 @@ fun RioSenseDashboardScreen(
 
         HorizontalPager(
             state = pagerState,
-            userScrollEnabled = !isCarDragging && !showControlsDrawer && !showSimulatorDrawer && !showBackgroundPicker,
+            userScrollEnabled = !isCarDragging && !showControlsDrawer && !showSimulatorDrawer && !showBackgroundPicker && !showSpotlightSearch,
             modifier = Modifier.fillMaxSize()
         ) { page ->
             when (page) {
@@ -401,8 +394,6 @@ fun RioSenseDashboardScreen(
                     val appPageIdx = (page - LAUNCHER_PAGE_APPS).coerceIn(0, appChunks.lastIndex)
                     LauncherAppDrawerPage(
                         pageApps = appChunks[appPageIdx],
-                        totalAppCount = filteredApps.size,
-                        hasSearchQuery = appSearchQuery.isNotEmpty(),
                         columns = appGridCols,
                         rows = appGridRows,
                         iconSize = launcherSettings.appIconSize,
@@ -424,11 +415,10 @@ fun RioSenseDashboardScreen(
         if (absolutePage > 1.001f) {
             val currentAppPageIdx = (pagerState.currentPage - LAUNCHER_PAGE_APPS).coerceIn(0, appChunks.lastIndex)
             LauncherAppDrawerHeader(
-                totalAppCount = filteredApps.size,
+                totalAppCount = installedApps.size,
                 appPageIndex = currentAppPageIdx,
                 totalAppPages = appChunks.size,
-                searchQuery = appSearchQuery,
-                onSearchQueryChange = { appSearchQuery = it },
+                onOpenSearch = { showSpotlightSearch = true },
                 onOpenSettings = {
                     showSimulatorDrawer = false
                     controlsInitialTab = ControlsTab.SETTINGS
@@ -498,6 +488,26 @@ fun RioSenseDashboardScreen(
             selectedBackground = launcherSettings.appDrawerBackground,
             onSelectBackground = { bg -> repository.setAppDrawerBackground(bg) },
             onDismiss = { showBackgroundPicker = false }
+        )
+
+        // macOS Spotlight-style centered search overlay
+        AppSpotlightSearchOverlay(
+            visible = showSpotlightSearch,
+            allApps = installedApps,
+            pinnedPackages = launcherSettings.pinnedPackages,
+            onLaunchApp = { app ->
+                showSpotlightSearch = false
+                InstalledAppsRepository.launchApp(context, app.packageName)
+            },
+            onTogglePinApp = { app ->
+                val pinnedNow = repository.togglePinnedDockApp(app.packageName)
+                pinFeedback = if (pinnedNow) {
+                    s.pinnedToDockFeedback(app.label)
+                } else {
+                    s.unpinnedFromDockFeedback(app.label)
+                }
+            },
+            onDismiss = { showSpotlightSearch = false }
         )
 
         // Consistent single-line Obsidian floating notification card matching VoiceCommandFloatingOverlay
