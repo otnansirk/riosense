@@ -107,6 +107,7 @@ import id.bangsadigital.riosense.ui.components.LeftSpeedAndSecurityPanel
 import id.bangsadigital.riosense.ui.components.MinimizedFloatingPillView
 import id.bangsadigital.riosense.ui.components.RightEngineTelemetryPanel
 import id.bangsadigital.riosense.ui.components.SimulatorAndSettingsSheet
+import id.bangsadigital.riosense.ui.components.TripRouteVectorIcon
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
 import id.bangsadigital.riosense.ui.i18n.LocalAppLanguage
 import id.bangsadigital.riosense.ui.i18n.appStrings
@@ -276,6 +277,7 @@ fun RioSenseDashboardScreen(
                     LauncherWidgetsPage(
                         telemetry = telemetry,
                         maintenance = maintenance,
+                        isPageVisible = pagerState.currentPage == LAUNCHER_PAGE_WIDGETS,
                         onOpenControlsTab = { tab ->
                             showSimulatorDrawer = false
                             controlsInitialTab = tab
@@ -824,7 +826,8 @@ private fun TopObsidianBar(
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 TripRouteVectorIcon(
-                    enabled = telemetry.tripRecordingEnabled,
+                    tint = if (telemetry.tripRecordingEnabled) ObsidianColors.EmeraldNominal else ObsidianColors.DimSilver,
+                    slashed = !telemetry.tripRecordingEnabled,
                     modifier = Modifier.size(14.dp)
                 )
                 if (telemetry.tripRecordingEnabled) {
@@ -1355,70 +1358,6 @@ private fun MicrophoneVectorIcon(
             strokeWidth = stroke,
             cap = StrokeCap.Round
         )
-    }
-}
-
-/**
- * Minimalist winding-route vector icon for GPS trip tracking.
- * Displays an S-curve route with start/end waypoints in emerald when enabled,
- * or a dimmed route crossed by a crisp diagonal slash when disabled.
- */
-@Composable
-private fun TripRouteVectorIcon(
-    enabled: Boolean,
-    modifier: Modifier = Modifier
-) {
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        val stroke = 1.35.dp.toPx()
-        val routeColor = if (enabled) ObsidianColors.EmeraldNominal else ObsidianColors.DimSilver
-
-        // Winding S-curve path connecting bottom-left start point to top-right destination point
-        val path = Path().apply {
-            moveTo(w * 0.22f, h * 0.78f)
-            cubicTo(
-                w * 0.22f, h * 0.45f,
-                w * 0.78f, h * 0.55f,
-                w * 0.78f, h * 0.22f
-            )
-        }
-        drawPath(
-            path = path,
-            color = routeColor,
-            style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        )
-
-        // Start & end waypoint dots
-        val dotRadius = 1.65.dp.toPx()
-        drawCircle(
-            color = routeColor,
-            radius = dotRadius,
-            center = Offset(w * 0.22f, h * 0.78f)
-        )
-        drawCircle(
-            color = routeColor,
-            radius = dotRadius,
-            center = Offset(w * 0.78f, h * 0.22f)
-        )
-
-        // Crisp diagonal slash when trip recording is turned OFF
-        if (!enabled) {
-            drawLine(
-                color = ObsidianColors.DeepObsidian,
-                start = Offset(w * 0.14f, h * 0.14f),
-                end = Offset(w * 0.86f, h * 0.86f),
-                strokeWidth = stroke * 2.2f,
-                cap = StrokeCap.Round
-            )
-            drawLine(
-                color = ObsidianColors.MutedSilver,
-                start = Offset(w * 0.14f, h * 0.14f),
-                end = Offset(w * 0.86f, h * 0.86f),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round
-            )
-        }
     }
 }
 

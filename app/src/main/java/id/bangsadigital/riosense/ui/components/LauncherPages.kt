@@ -1,6 +1,14 @@
 package id.bangsadigital.riosense.ui.components
 
+import android.content.Context
+import android.media.AudioManager
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -24,6 +32,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -47,10 +56,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +94,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import id.bangsadigital.riosense.launcher.InstalledAppsRepository
+import id.bangsadigital.riosense.launcher.MediaSessionBridge
+import id.bangsadigital.riosense.launcher.WeatherRepository
 import id.bangsadigital.riosense.model.AppDrawerBackground
 import id.bangsadigital.riosense.model.AppIconSize
 import id.bangsadigital.riosense.model.DockDisplayMode
@@ -91,23 +104,23 @@ import id.bangsadigital.riosense.model.InstalledAppInfo
 import id.bangsadigital.riosense.model.LauncherSettings
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.VehicleTelemetry
+import id.bangsadigital.riosense.ui.i18n.AppLanguage
 import id.bangsadigital.riosense.ui.i18n.AppStrings
+import id.bangsadigital.riosense.ui.i18n.LocalAppLanguage
 import id.bangsadigital.riosense.ui.i18n.appStrings
 import id.bangsadigital.riosense.ui.theme.ObsidianColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
- * Page 0 (Swipe Right from Home): Obsidian Widgets Hub with live Clock/Date,
- * Vehicle Status summary, and Phase 2 widget slot preview.
+ * Page 0 (Swipe Right from Home): Borderless Apple + Nothing OS Dot-Matrix Obsidian Bento Hub
+ * featuring Dot-Matrix Clock & Weekly Calendar, Live Music Player, Cached Weather, and Vehicle Snapshot.
  */
 @Composable
 fun LauncherWidgetsPage(
@@ -115,10 +128,15 @@ fun LauncherWidgetsPage(
     maintenance: MaintenanceState,
     onOpenControlsTab: (ControlsTab) -> Unit,
     onBackToHome: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isPageVisible: Boolean = true
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val s = appStrings()
+    val isId = LocalAppLanguage.current == AppLanguage.ID
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    var isSystemMusicActive by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -128,15 +146,61 @@ fun LauncherWidgetsPage(
         }
     }
 
+    LaunchedEffect(Unit) {
+        MediaSessionBridge.refresh(context)
+        WeatherRepository.refreshIfStale(context)
+    }
+
+    LaunchedEffect(isPageVisible, context) {
+        if (!isPageVisible) {
+            isSystemMusicActive = false
+            return@LaunchedEffect
+        }
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        while (true) {
+            isSystemMusicActive = audioManager?.isMusicActive == true
+            delay(700L)
+        }
+    }
+
+    val nowPlaying by MediaSessionBridge.nowPlaying.collectAsState()
+    val isAudioActive = nowPlaying.isPlaying || isSystemMusicActive
+    var trackProgress by remember { mutableStateOf(0f) }
+
+    LaunchedEffect(isPageVisible, nowPlaying) {
+        fun computeProgress(): Float {
+            if (nowPlaying.durationMs <= 0L) return 0f
+            val delta = if (nowPlaying.isPlaying && nowPlaying.lastPositionUpdateElapsedMs > 0L) {
+                ((SystemClock.elapsedRealtime() - nowPlaying.lastPositionUpdateElapsedMs) * nowPlaying.playbackSpeed)
+                    .toLong()
+                    .coerceAtLeast(0L)
+            } else {
+                0L
+            }
+            val pos = (nowPlaying.positionMs + delta).coerceIn(0L, nowPlaying.durationMs)
+            return (pos.toFloat() / nowPlaying.durationMs.toFloat()).coerceIn(0f, 1f)
+        }
+
+        trackProgress = computeProgress()
+        while (isPageVisible && nowPlaying.isPlaying && nowPlaying.durationMs > 0L) {
+            delay(500L)
+            trackProgress = computeProgress()
+        }
+    }
+
+    val weatherState by WeatherRepository.weather.collectAsState()
+    val weather = weatherState ?: remember { WeatherRepository.loadCached(context) }
+
     val timeStr = remember(nowMs) {
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(nowMs))
     }
     val dateStr = remember(nowMs) {
         SimpleDateFormat("EEEE, dd MMM yyyy", Locale.getDefault()).format(Date(nowMs))
     }
+
     val dueCount = remember(maintenance) { maintenance.dueOrOverdueItems().size }
     val odoText = remember(maintenance.currentOdometerKm) {
-        NumberFormat.getIntegerInstance(Locale("id", "ID")).format(maintenance.currentOdometerKm)
+        NumberFormat.getIntegerInstance(Locale.US).format(maintenance.currentOdometerKm)
     }
 
     Column(
@@ -145,7 +209,7 @@ fun LauncherWidgetsPage(
             .padding(horizontal = 24.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // Header row
+        // Minimal Borderless Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -168,210 +232,634 @@ fun LauncherWidgetsPage(
             LauncherHomeIconButton(onClick = onBackToHome)
         }
 
-        // Main two-column widget grid
+        // Borderless 2x2 Apple + Nothing Dot-Matrix Bento Grid
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(top = 10.dp, bottom = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Left: Large Clock & Date + Phase 2 Widget Slots
+            // LEFT COLUMN: Tight Clock (top) + Live Music Player (bottom)
             Column(
                 modifier = Modifier
-                    .weight(0.45f)
+                    .width(234.dp)
                     .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Column(
+                // 1. Top-Left: Dot-Matrix Clock & Date (100% offline, tightly fitted)
+                ObsidianWidgetCard(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(ObsidianColors.ObsidianPanel)
-                        .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 20.dp, vertical = 18.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                        .weight(0.46f)
                 ) {
-                    Text(
-                        text = timeStr,
-                        color = ObsidianColors.PureSilver,
-                        fontSize = 52.sp,
-                        fontWeight = FontWeight.Light,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 1.sp
-                    )
-                    Text(
-                        text = dateStr,
-                        color = ObsidianColors.MutedSilver,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        DotMatrixText(
+                            text = timeStr,
+                            dotSize = 6.0.dp,
+                            dotGap = 2.2.dp,
+                            charGap = 7.2.dp,
+                            color = ObsidianColors.PureSilver
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = dateStr,
+                            color = ObsidianColors.MutedSilver,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
-                Column(
+                // 2. Bottom-Left: Borderless Obsidian Music Player + Dot-Matrix Spectrum
+                ObsidianWidgetCard(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(ObsidianColors.ObsidianPanel)
-                        .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 18.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.Center
+                        .weight(0.54f)
                 ) {
-                    Text(
-                        text = s.upcomingWidgetsLabel,
-                        color = ObsidianColors.CobaltAccent,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 0.6.sp
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = s.upcomingWidgetsDesc,
-                        color = ObsidianColors.MutedSilver,
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Album Artwork or Minimalist Vinyl Graphic (tap to open music app)
+                            Box(
+                                modifier = Modifier
+                                    .size(62.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFF191D27))
+                                    .clickable { MediaSessionBridge.openMusicApp(context) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                val art = nowPlaying.albumArt
+                                if (art != null) {
+                                    Image(
+                                        bitmap = art.asImageBitmap(),
+                                        contentDescription = nowPlaying.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Canvas(modifier = Modifier.size(32.dp)) {
+                                        val c = Offset(size.width * 0.5f, size.height * 0.5f)
+                                        drawCircle(
+                                            color = ObsidianColors.DimSilver.copy(alpha = 0.45f),
+                                            radius = size.minDimension * 0.46f,
+                                            center = c,
+                                            style = Stroke(width = 1.5.dp.toPx())
+                                        )
+                                        drawCircle(
+                                            color = ObsidianColors.MutedSilver.copy(alpha = 0.65f),
+                                            radius = size.minDimension * 0.24f,
+                                            center = c,
+                                            style = Stroke(width = 1.2.dp.toPx())
+                                        )
+                                        drawCircle(
+                                            color = ObsidianColors.PureSilver,
+                                            radius = size.minDimension * 0.08f,
+                                            center = c
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Track info + Unboxed Playback Controls
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                    Text(
+                                        text = nowPlaying.title.ifBlank {
+                                            if (isId) "Pemutar Musik" else "Now Playing"
+                                        },
+                                        color = ObsidianColors.PureSilver,
+                                        fontSize = 13.sp,
+                                        lineHeight = 15.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (!nowPlaying.hasListenerPermission) {
+                                        Text(
+                                            text = if (isId) "Aktifkan info lagu live ›" else "Enable live track info ›",
+                                            color = ObsidianColors.CobaltAccent,
+                                            fontSize = 10.5.sp,
+                                            lineHeight = 13.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.clickable {
+                                                MediaSessionBridge.openNotificationListenerSettings(context)
+                                            }
+                                        )
+                                    } else {
+                                        Text(
+                                            text = nowPlaying.artist.ifBlank {
+                                                "Spotify · YouTube Music"
+                                            },
+                                            color = ObsidianColors.MutedSilver,
+                                            fontSize = 10.5.sp,
+                                            lineHeight = 13.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Unboxed Previous Track
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .clickable { MediaSessionBridge.skipPrevious(context) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Canvas(modifier = Modifier.size(13.dp)) {
+                                            val w = size.width
+                                            val h = size.height
+                                            drawLine(
+                                                color = ObsidianColors.ChampagneAccent,
+                                                start = Offset(w * 0.18f, h * 0.22f),
+                                                end = Offset(w * 0.18f, h * 0.78f),
+                                                strokeWidth = 1.7.dp.toPx(),
+                                                cap = StrokeCap.Round
+                                            )
+                                            val tri = Path().apply {
+                                                moveTo(w * 0.84f, h * 0.20f)
+                                                lineTo(w * 0.34f, h * 0.50f)
+                                                lineTo(w * 0.84f, h * 0.80f)
+                                                close()
+                                            }
+                                            drawPath(tri, color = ObsidianColors.ChampagneAccent)
+                                        }
+                                    }
+
+                                    // Unboxed Enlarged Play / Pause with Circular Progress Ring
+                                    MusicPlayPauseProgressButton(
+                                        isPlaying = isAudioActive,
+                                        progress = trackProgress,
+                                        hasDuration = nowPlaying.durationMs > 0L,
+                                        onClick = { MediaSessionBridge.togglePlayPause(context) }
+                                    )
+
+                                    // Unboxed Next Track
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .clickable { MediaSessionBridge.skipNext(context) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Canvas(modifier = Modifier.size(13.dp)) {
+                                            val w = size.width
+                                            val h = size.height
+                                            val tri = Path().apply {
+                                                moveTo(w * 0.16f, h * 0.20f)
+                                                lineTo(w * 0.66f, h * 0.50f)
+                                                lineTo(w * 0.16f, h * 0.80f)
+                                                close()
+                                            }
+                                            drawPath(tri, color = ObsidianColors.ChampagneAccent)
+                                            drawLine(
+                                                color = ObsidianColors.ChampagneAccent,
+                                                start = Offset(w * 0.82f, h * 0.22f),
+                                                end = Offset(w * 0.82f, h * 0.78f),
+                                                strokeWidth = 1.7.dp.toPx(),
+                                                cap = StrokeCap.Round
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        DotMatrixAudioSpectrum(
+                            isPlaying = isAudioActive,
+                            isVisible = isPageVisible,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(30.dp)
+                        )
+                    }
                 }
             }
 
-            // Right: Live Vehicle Telemetry & Quick Actions
+            // RIGHT COLUMN: Dot-Matrix Weather (top) + Borderless Vehicle Snapshot (bottom)
             Column(
                 modifier = Modifier
-                    .weight(0.55f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(ObsidianColors.ObsidianPanel)
-                    .border(1.dp, ObsidianColors.ObsidianBorder, RoundedCornerShape(14.dp))
-                    .padding(horizontal = 18.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.SpaceBetween
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    text = s.vehicleSummaryTitle,
-                    color = ObsidianColors.DimSilver,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 0.8.sp
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                // 3. Top-Right: Dot-Matrix Weather Card (Cached Open-Meteo)
+                ObsidianWidgetCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(0.54f),
+                    onClick = {
+                        scope.launch { WeatherRepository.refreshIfStale(context, force = true) }
+                    }
                 ) {
-                    WidgetStatCell(
-                        label = "SPEED",
-                        value = "${telemetry.speedKmh} km/h",
-                        accent = ObsidianColors.PureSilver,
-                        modifier = Modifier.weight(1f)
-                    )
-                    WidgetStatCell(
-                        label = "RPM",
-                        value = "${telemetry.rpm}",
-                        accent = ObsidianColors.PureSilver,
-                        modifier = Modifier.weight(1f)
-                    )
-                    WidgetStatCell(
-                        label = s.coolant.uppercase(),
-                        value = "${telemetry.coolantTempC}°C",
-                        accent = if (telemetry.isCoolantOverheat) ObsidianColors.CrimsonAlert else ObsidianColors.EmeraldNominal,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                DotMatrixWeatherIcon(
+                                    condition = weather.condition,
+                                    modifier = Modifier.size(38.dp)
+                                )
+                                DotMatrixText(
+                                    text = "${weather.tempC}°",
+                                    dotSize = 3.5.dp,
+                                    dotGap = 1.4.dp,
+                                    charGap = 4.5.dp,
+                                    color = ObsidianColors.PureSilver
+                                )
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = "H ${weather.highC}°",
+                                        color = ObsidianColors.MutedSilver,
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    Text(
+                                        text = "L ${weather.lowC}°",
+                                        color = ObsidianColors.DimSilver,
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = weather.locationName,
+                                    color = ObsidianColors.PureSilver,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = if (isId) weather.conditionLabelId else weather.conditionLabelEn,
+                                    color = ObsidianColors.MutedSilver,
+                                    fontSize = 10.5.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        // 5-Day Forecast Strip
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            weather.daily.take(5).forEach { day ->
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = day.dayLabel,
+                                        color = ObsidianColors.DimSilver,
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    DotMatrixWeatherIcon(
+                                        condition = day.condition,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "${day.highC}°",
+                                        color = ObsidianColors.PureSilver,
+                                        fontSize = 10.5.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "${day.lowC}°",
+                                        color = ObsidianColors.DimSilver,
+                                        fontSize = 9.5.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                // 4. Bottom-Right: Borderless Vehicle Snapshot & Quick Jump Pills
+                ObsidianWidgetCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(0.46f)
                 ) {
-                    WidgetStatCell(
-                        label = s.battery.uppercase(),
-                        value = String.format("%.1f V", telemetry.batteryVoltage),
-                        accent = if (telemetry.isBatteryAlert) ObsidianColors.CrimsonAlert else ObsidianColors.PureSilver,
-                        modifier = Modifier.weight(1f)
-                    )
-                    WidgetStatCell(
-                        label = "ODO",
-                        value = "$odoText km",
-                        accent = ObsidianColors.PureSilver,
-                        modifier = Modifier.weight(1f)
-                    )
-                    WidgetStatCell(
-                        label = s.serviceTitle.uppercase(),
-                        value = if (dueCount == 0) s.statusAllOk else s.statusDueSoon(dueCount),
-                        accent = if (dueCount == 0) ObsidianColors.EmeraldNominal else ObsidianColors.AmberCaution,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                    Column(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(
+                                    text = "ODOMETER · KIA RIO UB",
+                                    color = ObsidianColors.DimSilver,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    letterSpacing = 0.7.sp
+                                )
+                                Row(
+                                    verticalAlignment = Alignment.Bottom,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    DotMatrixText(
+                                        text = odoText,
+                                        dotSize = 2.4.dp,
+                                        dotGap = 1.0.dp,
+                                        charGap = 3.2.dp,
+                                        color = ObsidianColors.PureSilver
+                                    )
+                                    Text(
+                                        text = "KM",
+                                        color = ObsidianColors.MutedSilver,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
 
-                // Quick Jump Buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(
-                        ControlsTab.SERVICE to s.serviceTitle,
-                        ControlsTab.TRIP_HISTORY to s.tripHistoryTitle,
-                        ControlsTab.SETTINGS to s.settingsTitle
-                    ).forEach { (tab, label) ->
-                        Box(
+                            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                BorderlessTelemetryMetric(
+                                    label = s.coolant.uppercase(),
+                                    value = "${telemetry.coolantTempC}°C",
+                                    accent = if (telemetry.isCoolantOverheat) ObsidianColors.CrimsonAlert else ObsidianColors.EmeraldNominal
+                                )
+                                BorderlessTelemetryMetric(
+                                    label = s.battery.uppercase(),
+                                    value = String.format("%.1fV", telemetry.batteryVoltage),
+                                    accent = if (telemetry.isBatteryAlert) ObsidianColors.CrimsonAlert else ObsidianColors.PureSilver
+                                )
+                                BorderlessTelemetryMetric(
+                                    label = s.serviceTitle.uppercase(),
+                                    value = if (dueCount == 0) s.statusAllOk else s.statusDueSoon(dueCount),
+                                    accent = if (dueCount == 0) ObsidianColors.EmeraldNominal else ObsidianColors.AmberCaution
+                                )
+                            }
+                        }
+
+                        Spacer(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(ObsidianColors.ObsidianSubPanel)
-                                .border(1.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(8.dp))
-                                .clickable { onOpenControlsTab(tab) }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
+                                .heightIn(min = 14.dp)
+                        )
+
+                        // Unboxed Obsidian Icon-Only Quick-Jump Actions (right-aligned)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.End),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = label,
-                                color = ObsidianColors.PureSilver,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            listOf(
+                                ControlsTab.SERVICE,
+                                ControlsTab.TRIP_HISTORY,
+                                ControlsTab.SETTINGS
+                            ).forEach { tab ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .clickable { onOpenControlsTab(tab) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    QuickJumpVectorIcon(
+                                        tab = tab,
+                                        showAlertDot = tab == ControlsTab.SERVICE && dueCount > 0,
+                                        tint = ObsidianColors.MutedSilver
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(14.dp))
     }
 }
 
 @Composable
-private fun WidgetStatCell(
+private fun ObsidianWidgetCard(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val shape = RoundedCornerShape(22.dp)
+    Box(
+        modifier = modifier
+            .shadow(
+                elevation = 14.dp,
+                shape = shape,
+                ambientColor = Color.Black,
+                spotColor = Color.Black
+            )
+            .clip(shape)
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(Color(0xFF14171F), Color(0xFF0C0E13))
+                )
+            )
+            .then(
+                if (onClick != null) Modifier.clickable { onClick() } else Modifier
+            )
+            .padding(horizontal = 18.dp, vertical = 15.dp),
+        content = content
+    )
+}
+
+@Composable
+private fun MusicPlayPauseProgressButton(
+    isPlaying: Boolean,
+    progress: Float,
+    hasDuration: Boolean,
+    onClick: () -> Unit
+) {
+    val sweepStartAngle = if (isPlaying && !hasDuration) {
+        val transition = rememberInfiniteTransition(label = "musicRingSweep")
+        val angle by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 2400, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "musicRingAngle"
+        )
+        angle
+    } else {
+        -90f
+    }
+
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .aspectRatio(1f)
+            .clip(CircleShape)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val ringStrokePx = 2.2.dp.toPx()
+            val diameter = (minOf(size.width, size.height) - ringStrokePx).coerceAtLeast(1f)
+            val left = (size.width - diameter) * 0.5f
+            val top = (size.height - diameter) * 0.5f
+            val arcTopLeft = Offset(left, top)
+            val arcSize = Size(diameter, diameter)
+
+            drawArc(
+                color = Color(0xFF252A36),
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = arcTopLeft,
+                size = arcSize,
+                style = Stroke(width = ringStrokePx)
+            )
+
+            val clampedProgress = progress.coerceIn(0f, 1f)
+            if (hasDuration && clampedProgress > 0.001f) {
+                drawArc(
+                    color = ObsidianColors.PureSilver,
+                    startAngle = -90f,
+                    sweepAngle = 360f * clampedProgress,
+                    useCenter = false,
+                    topLeft = arcTopLeft,
+                    size = arcSize,
+                    style = Stroke(width = ringStrokePx, cap = StrokeCap.Round)
+                )
+            } else if (isPlaying) {
+                drawArc(
+                    color = ObsidianColors.CobaltAccent.copy(alpha = 0.85f),
+                    startAngle = sweepStartAngle,
+                    sweepAngle = 85f,
+                    useCenter = false,
+                    topLeft = arcTopLeft,
+                    size = arcSize,
+                    style = Stroke(width = ringStrokePx, cap = StrokeCap.Round)
+                )
+            }
+        }
+
+        Canvas(modifier = Modifier.size(16.dp)) {
+            val w = size.width
+            val h = size.height
+            if (isPlaying) {
+                val barW = w * 0.22f
+                drawRoundRect(
+                    color = ObsidianColors.PureSilver,
+                    topLeft = Offset(w * 0.22f, h * 0.16f),
+                    size = Size(barW, h * 0.68f),
+                    cornerRadius = CornerRadius(2.dp.toPx())
+                )
+                drawRoundRect(
+                    color = ObsidianColors.PureSilver,
+                    topLeft = Offset(w * 0.56f, h * 0.16f),
+                    size = Size(barW, h * 0.68f),
+                    cornerRadius = CornerRadius(2.dp.toPx())
+                )
+            } else {
+                val tri = Path().apply {
+                    moveTo(w * 0.28f, h * 0.14f)
+                    lineTo(w * 0.88f, h * 0.50f)
+                    lineTo(w * 0.28f, h * 0.86f)
+                    close()
+                }
+                drawPath(tri, color = ObsidianColors.PureSilver)
+            }
+        }
+    }
+}
+
+@Composable
+private fun BorderlessTelemetryMetric(
     label: String,
     value: String,
-    accent: Color,
-    modifier: Modifier = Modifier
+    accent: Color
 ) {
     Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(ObsidianColors.ObsidianSubPanel)
-            .border(1.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(10.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp)
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         Text(
             text = label,
             color = ObsidianColors.DimSilver,
-            fontSize = 9.sp,
+            fontSize = 8.5.sp,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.6.sp
         )
         Text(
             text = value,
             color = accent,
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            fontFamily = FontFamily.Monospace
         )
+    }
+}
+
+@Composable
+private fun QuickJumpVectorIcon(
+    tab: ControlsTab,
+    showAlertDot: Boolean,
+    tint: Color
+) {
+    Box(
+        modifier = Modifier.size(22.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val iconModifier = Modifier.size(17.dp)
+        when (tab) {
+            ControlsTab.SERVICE -> ServiceWrenchVectorIcon(tint = tint, modifier = iconModifier)
+            ControlsTab.TRIP_HISTORY -> TripRouteVectorIcon(tint = tint, modifier = iconModifier)
+            else -> SettingsGearVectorIcon(tint = tint, modifier = iconModifier)
+        }
+
+        if (showAlertDot) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(5.dp)
+                    .clip(CircleShape)
+                    .background(ObsidianColors.AmberCaution)
+            )
+        }
     }
 }
 
@@ -944,36 +1432,10 @@ private fun LauncherSettingsGearButton(
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.size(17.dp)) {
-            val w = size.width
-            val h = size.height
-            val cx = w * 0.5f
-            val cy = h * 0.5f
-            val tint = ObsidianColors.MutedSilver
-            val stroke = 1.45.dp.toPx()
-            val rRing = w * 0.28f
-            val rToothIn = w * 0.33f
-            val rToothOut = w * 0.46f
-
-            for (i in 0 until 8) {
-                val angle = i * (PI / 4.0)
-                val cosA = cos(angle).toFloat()
-                val sinA = sin(angle).toFloat()
-                drawLine(
-                    color = tint,
-                    start = Offset(cx + cosA * rToothIn, cy + sinA * rToothIn),
-                    end = Offset(cx + cosA * rToothOut, cy + sinA * rToothOut),
-                    strokeWidth = 1.65.dp.toPx(),
-                    cap = StrokeCap.Round
-                )
-            }
-            drawCircle(
-                color = tint,
-                radius = rRing,
-                center = Offset(cx, cy),
-                style = Stroke(width = stroke)
-            )
-        }
+        SettingsGearVectorIcon(
+            tint = ObsidianColors.MutedSilver,
+            modifier = Modifier.size(17.dp)
+        )
     }
 }
 

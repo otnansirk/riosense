@@ -84,9 +84,6 @@ import id.bangsadigital.riosense.ui.theme.ObsidianColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 enum class ControlsTab(val label: String, val subtitle: String) {
     ERROR_LOG("Error Log", "OBD-II detected faults & DTC history"),
@@ -299,45 +296,14 @@ fun ControlsMenuSheet(
                         .clickable { activeSection = ControlsTab.SETTINGS },
                     contentAlignment = Alignment.Center
                 ) {
-                    Canvas(modifier = Modifier.size(15.dp)) {
-                        val cx = size.width * 0.5f
-                        val cy = size.height * 0.5f
-                        val rOuter = size.minDimension * 0.44f
-                        val rRing = size.minDimension * 0.30f
-                        val rInner = size.minDimension * 0.13f
-                        val stroke = 1.45.dp.toPx()
-                        val tint = if (telemetry.isCustomAlertSettings) {
+                    SettingsGearVectorIcon(
+                        tint = if (telemetry.isCustomAlertSettings) {
                             ObsidianColors.CobaltAccent
                         } else {
                             ObsidianColors.PureSilver
-                        }
-
-                        // 8 gear teeth radiating from the outer ring
-                        for (i in 0 until 8) {
-                            val angle = (i * 45.0) * (PI / 180.0)
-                            val cosA = cos(angle).toFloat()
-                            val sinA = sin(angle).toFloat()
-                            drawLine(
-                                color = tint,
-                                start = Offset(cx + cosA * (rRing * 0.92f), cy + sinA * (rRing * 0.92f)),
-                                end = Offset(cx + cosA * rOuter, cy + sinA * rOuter),
-                                strokeWidth = 1.7.dp.toPx(),
-                                cap = StrokeCap.Round
-                            )
-                        }
-                        // Main gear body ring & center hub
-                        drawCircle(
-                            color = tint,
-                            radius = rRing,
-                            center = Offset(cx, cy),
-                            style = Stroke(width = stroke)
-                        )
-                        drawCircle(
-                            color = Color(0xFF181B22),
-                            radius = rInner,
-                            center = Offset(cx, cy)
-                        )
-                    }
+                        },
+                        modifier = Modifier.size(15.dp)
+                    )
                 }
             }
         }

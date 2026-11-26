@@ -94,6 +94,17 @@
                 android:value="Global automotive quick-access dock overlay" />
         </service>
 
+        <!-- Zero-polling MediaSession Bridge for live Spotify / YouTube Music metadata & art -->
+        <service
+            android:name=".launcher.RioSenseMediaListenerService"
+            android:exported="true"
+            android:label="RioSense Media Sync"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
     </application>
 
 </manifest>

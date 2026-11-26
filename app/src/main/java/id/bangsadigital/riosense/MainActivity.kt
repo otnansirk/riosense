@@ -30,6 +30,7 @@ import id.bangsadigital.riosense.data.TripGpsTracker
 import id.bangsadigital.riosense.data.VehicleRepository
 import id.bangsadigital.riosense.launcher.GlobalDockOverlayService
 import id.bangsadigital.riosense.launcher.InstalledAppsRepository
+import id.bangsadigital.riosense.launcher.MediaSessionBridge
 import id.bangsadigital.riosense.ui.RioSenseDashboardScreen
 import id.bangsadigital.riosense.ui.components.ControlsTab
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
@@ -234,6 +235,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         hasOverlayPermission = Settings.canDrawOverlays(this)
         GlobalDockOverlayService.sync(this, vehicleRepository.launcherSettings.value)
+        MediaSessionBridge.refresh(this)
     }
 
     private fun handleLauncherPageIntent(intent: Intent?) {
