@@ -46,19 +46,23 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -100,6 +104,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import id.bangsadigital.riosense.ui.components.AppDrawerBackgroundCanvas
@@ -491,7 +497,7 @@ fun RioSenseDashboardScreen(
 
                             // 3b. FLOATING OBSIDIAN VOICE COMMAND OVERLAY
                             if (voiceUiState.isListening || voiceUiState.feedbackCard != null) {
-                                val bottomOffset = if (voiceUiState.isListening) 86.dp else 46.dp
+                                val bottomOffset = if (voiceUiState.isListening) 66.dp else 46.dp
                                 VoiceCommandFloatingOverlay(
                                     voiceUiState = voiceUiState,
                                     onStopListening = onToggleVoiceListening,
@@ -1330,9 +1336,9 @@ private fun VoiceCommandFloatingOverlay(
 }
 
 /**
- * Borderless luxury automotive HUD audio frequency visualizer.
- * Reacts smoothly in real time to microphone RMS level with multi-harmonic motion,
- * zero text clutter, and zero heavy box borders.
+ * Luminous cyan-to-electric-blue silk soundwave aurora visualizer triggered while listening.
+ * Renders intersecting translucent wave ribbons, outer harmonic filaments, and soft micro-sparkles
+ * tapering smoothly to sharp horizontal tips and reacting in real time to microphone RMS energy.
  */
 @Composable
 private fun ObsidianFrequencyVisualizer(
@@ -1349,16 +1355,27 @@ private fun ObsidianFrequencyVisualizer(
         label = "voiceFreqLevel"
     )
 
-    val infiniteTransition = rememberInfiniteTransition(label = "voiceFreqWave")
-    val phase by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2.0 * PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1250, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "voiceFreqPhase"
-    )
+    val smoothLevelState = rememberUpdatedState(smoothLevel)
+    var phase1 by remember { mutableFloatStateOf(0f) }
+    var phase2 by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(Unit) {
+        val twoPi = (2.0 * PI).toFloat()
+        var last = withFrameNanos { it }
+        while (true) {
+            val now = withFrameNanos { it }
+            val dt = ((now - last) / 1_000_000_000f).coerceAtMost(0.05f)
+            last = now
+            val speedMul = 1.0f + 0.55f * smoothLevelState.value
+            phase1 = (phase1 + 2.86f * speedMul * dt) % twoPi
+            phase2 = (phase2 + 1.80f * speedMul * dt) % twoPi
+        }
+    }
+
+    val fillPaths = remember { List(3) { Path() } }
+    val topEdgePaths = remember { List(3) { Path() } }
+    val botEdgePaths = remember { List(3) { Path() } }
+    val filamentPaths = remember { List(3) { Path() } }
 
     Box(
         modifier = modifier
@@ -1366,67 +1383,263 @@ private fun ObsidianFrequencyVisualizer(
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() }
             ) { onStopListening() }
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center
     ) {
         Canvas(
             modifier = Modifier
-                .width(154.dp)
-                .height(42.dp)
+                .width(280.dp)
+                .height(76.dp)
         ) {
-            val barCount = 15
-            val centerIdx = (barCount - 1) / 2f
-            val barWidth = 3.2.dp.toPx()
-            val totalBarsWidth = barCount * barWidth
-            val gap = (size.width - totalBarsWidth) / (barCount - 1)
-            val centerY = size.height * 0.5f
+            val w = size.width
+            val h = size.height
+            val centerY = h * 0.5f
+            val energy = (0.36f + 0.72f * smoothLevel).coerceIn(0.36f, 1.08f)
+            val maxAmp = h * 0.44f * energy
+            val segments = 64
 
-            // Soft borderless ambient cobalt glow beneath the wave
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        ObsidianColors.CobaltAccent.copy(alpha = 0.16f + smoothLevel * 0.18f),
-                        Color.Transparent
+            fun taperWindow(u: Float): Float =
+                sin(u * PI).toFloat().coerceAtLeast(0f).pow(2.35f)
+
+            // 1. Subtle dark-navy contrast cushion & reactive cyan-blue aura behind the silk wave
+            withTransform({
+                scale(scaleX = 1f, scaleY = 0.28f, pivot = Offset(w * 0.5f, centerY))
+            }) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF040914).copy(alpha = 0.44f),
+                            Color(0xFF040914).copy(alpha = 0.16f),
+                            Color.Transparent
+                        ),
+                        center = Offset(w * 0.5f, centerY),
+                        radius = w * 0.48f
                     ),
-                    center = Offset(size.width * 0.5f, centerY),
-                    radius = size.width * 0.48f
-                ),
-                radius = size.width * 0.48f,
-                center = Offset(size.width * 0.5f, centerY)
+                    radius = w * 0.48f,
+                    center = Offset(w * 0.5f, centerY)
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF1E9EF0).copy(alpha = (0.18f + smoothLevel * 0.22f).coerceIn(0f, 1f)),
+                            Color(0xFF1456C8).copy(alpha = (0.07f + smoothLevel * 0.08f).coerceIn(0f, 1f)),
+                            Color.Transparent
+                        ),
+                        center = Offset(w * 0.5f, centerY),
+                        radius = w * 0.44f
+                    ),
+                    radius = w * 0.44f,
+                    center = Offset(w * 0.5f, centerY),
+                    blendMode = BlendMode.Plus
+                )
+            }
+
+            // Palette brushes fading seamlessly to transparent at both needle tips
+            val fillAlphaBoost = (0.18f + 0.18f * smoothLevel).coerceIn(0f, 1f)
+            val coreAlphaBoost = (0.72f + 0.24f * smoothLevel).coerceIn(0f, 1f)
+            val bloomAlphaBoost = (0.18f + 0.20f * smoothLevel).coerceIn(0f, 1f)
+
+            val ribbonFillBrush = Brush.horizontalGradient(
+                colorStops = arrayOf(
+                    0.00f to Color(0x003BF0DC),
+                    0.18f to Color(0xFF3BF0DC).copy(alpha = fillAlphaBoost),
+                    0.48f to Color(0xFF28C8FF).copy(alpha = (fillAlphaBoost * 1.12f).coerceIn(0f, 1f)),
+                    0.78f to Color(0xFF2872FF).copy(alpha = fillAlphaBoost),
+                    1.00f to Color(0x001B46D8)
+                )
+            )
+            val ribbonBloomBrush = Brush.horizontalGradient(
+                colorStops = arrayOf(
+                    0.00f to Color(0x003BF0DC),
+                    0.16f to Color(0xFF3BF0DC).copy(alpha = bloomAlphaBoost),
+                    0.50f to Color(0xFF28C8FF).copy(alpha = (bloomAlphaBoost * 1.18f).coerceIn(0f, 1f)),
+                    0.82f to Color(0xFF2872FF).copy(alpha = bloomAlphaBoost),
+                    1.00f to Color(0x001B46D8)
+                )
+            )
+            val ribbonCoreBrush = Brush.horizontalGradient(
+                colorStops = arrayOf(
+                    0.00f to Color(0x003BF0DC),
+                    0.14f to Color(0xFF7AF7EA).copy(alpha = coreAlphaBoost),
+                    0.48f to Color(0xFF56DAFF).copy(alpha = (coreAlphaBoost * 1.04f).coerceIn(0f, 1f)),
+                    0.82f to Color(0xFF3B86FF).copy(alpha = coreAlphaBoost),
+                    1.00f to Color(0x001B46D8)
+                )
             )
 
-            for (i in 0 until barCount) {
-                val distFromCenter = abs(i - centerIdx) / centerIdx // 0.0 at center -> 1.0 at edges
-                val bellEnvelope = (1f - distFromCenter * distFromCenter * 0.78f).coerceIn(0.22f, 1f)
+            // 2. Three intersecting translucent silk ribbons (upper/lower crossing harmonic envelopes)
+            val bloomWidth = (3.6f + 0.8f * smoothLevel).dp.toPx()
+            val spineStroke = 0.8.dp.toPx()
 
-                // Multi-harmonic wave for organic, non-robotic cadence
-                val h1 = sin(phase * 1.0f + i * 0.62f)
-                val h2 = sin(phase * 2.0f - i * 0.95f) * 0.45f
-                val waveNorm = ((h1 + h2) * 0.35f + 0.5f).coerceIn(0.12f, 1f)
+            for (r in 0 until 3) {
+                val fillPath = fillPaths[r].apply { reset() }
+                val topPath = topEdgePaths[r].apply { reset() }
+                val botPath = botEdgePaths[r].apply { reset() }
 
-                val minH = size.height * 0.14f
-                val idleAmp = size.height * 0.34f * bellEnvelope * waveNorm
-                val voiceBoost = size.height * 0.62f * bellEnvelope * smoothLevel * (0.45f + 0.55f * waveNorm)
-                val barHeight = (minH + idleAmp + voiceBoost).coerceIn(minH, size.height * 0.94f)
+                val ampScale = when (r) {
+                    0 -> 0.96f
+                    1 -> 0.80f
+                    else -> 0.62f
+                }
+                val fPrimary = when (r) {
+                    0 -> 2.15f
+                    1 -> 2.85f
+                    else -> 3.45f
+                }
+                val phaseOffset = r * 1.38f
 
-                val x = i * (barWidth + gap) + barWidth * 0.5f
-                val topY = centerY - barHeight * 0.5f
-                val bottomY = centerY + barHeight * 0.5f
+                // Forward trace for upper boundary
+                for (i in 0..segments) {
+                    val u = i / segments.toFloat()
+                    val x = u * w
+                    val env = taperWindow(u) * maxAmp * ampScale
+                    val carrier = sin(u * PI * fPrimary + phase1 + phaseOffset).toFloat()
+                    val harmonic = 0.36f * sin(u * PI * (fPrimary * 1.65f) - phase2 + r * 0.9f).toFloat()
+                    val yTop = centerY - env * (0.54f * carrier + harmonic + 0.16f * cos(phase2 + u * 4f).toFloat())
 
-                val barColor = if (distFromCenter < 0.38f) {
-                    ObsidianColors.CobaltAccent.copy(alpha = 0.85f + smoothLevel * 0.15f)
-                } else if (distFromCenter < 0.72f) {
-                    ObsidianColors.PureSilver.copy(alpha = 0.72f + smoothLevel * 0.22f)
-                } else {
-                    ObsidianColors.MutedSilver.copy(alpha = 0.42f + smoothLevel * 0.30f)
+                    if (i == 0) {
+                        fillPath.moveTo(x, yTop)
+                        topPath.moveTo(x, yTop)
+                    } else {
+                        fillPath.lineTo(x, yTop)
+                        topPath.lineTo(x, yTop)
+                    }
                 }
 
-                drawLine(
-                    color = barColor,
-                    start = Offset(x, topY),
-                    end = Offset(x, bottomY),
-                    strokeWidth = barWidth,
-                    cap = StrokeCap.Round
+                // Lower boundary traced forward for edge stroke & reverse for closed ribbon fill
+                for (i in segments downTo 0) {
+                    val u = i / segments.toFloat()
+                    val x = u * w
+                    val env = taperWindow(u) * maxAmp * ampScale
+                    val carrierBot = sin(u * PI * (fPrimary * 0.92f) - phase1 * 0.9f + phaseOffset + 1.15f).toFloat()
+                    val harmonicBot = 0.34f * cos(u * PI * (fPrimary * 1.48f) + phase2 + r * 1.2f).toFloat()
+                    val yBot = centerY + env * (0.52f * carrierBot + harmonicBot - 0.14f * sin(phase1 + u * 3.5f).toFloat())
+
+                    fillPath.lineTo(x, yBot)
+                    if (i == segments) {
+                        botPath.moveTo(x, yBot)
+                    } else {
+                        botPath.lineTo(x, yBot)
+                    }
+                }
+                fillPath.close()
+
+                drawPath(
+                    path = fillPath,
+                    brush = ribbonFillBrush,
+                    blendMode = BlendMode.Plus
+                )
+                val edgeCoreWidth = (1.55f - r * 0.15f).dp.toPx()
+                drawPath(
+                    path = topPath,
+                    brush = ribbonBloomBrush,
+                    style = Stroke(width = bloomWidth, cap = StrokeCap.Round, join = StrokeJoin.Round),
+                    blendMode = BlendMode.Plus
+                )
+                drawPath(
+                    path = botPath,
+                    brush = ribbonBloomBrush,
+                    style = Stroke(width = bloomWidth, cap = StrokeCap.Round, join = StrokeJoin.Round),
+                    blendMode = BlendMode.Plus
+                )
+                drawPath(
+                    path = topPath,
+                    brush = ribbonCoreBrush,
+                    style = Stroke(width = edgeCoreWidth, cap = StrokeCap.Round, join = StrokeJoin.Round),
+                    blendMode = BlendMode.Plus
+                )
+                drawPath(
+                    path = botPath,
+                    brush = ribbonCoreBrush,
+                    style = Stroke(width = edgeCoreWidth, cap = StrokeCap.Round, join = StrokeJoin.Round),
+                    blendMode = BlendMode.Plus
+                )
+            }
+
+            // 3. Three delicate outer harmonic filaments dancing above and below the main ribbons
+            val filamentAlpha = (0.30f + 0.30f * smoothLevel).coerceIn(0f, 1f)
+            val filamentBrush = Brush.horizontalGradient(
+                colorStops = arrayOf(
+                    0.00f to Color(0x003BF0DC),
+                    0.22f to Color(0xFF4FF5E4).copy(alpha = filamentAlpha),
+                    0.55f to Color(0xFF3CCBFF).copy(alpha = (filamentAlpha * 1.08f).coerceIn(0f, 1f)),
+                    0.84f to Color(0xFF2872FF).copy(alpha = (filamentAlpha * 0.85f).coerceIn(0f, 1f)),
+                    1.00f to Color(0x001B46D8)
+                )
+            )
+            for (f in 0 until 3) {
+                val fPath = filamentPaths[f].apply { reset() }
+                val sign = if (f % 2 == 0) -1f else 1f
+                val ampScale = 0.88f - f * 0.10f
+                val freq = 1.6f + f * 0.7f
+                for (i in 0..segments) {
+                    val u = i / segments.toFloat()
+                    val x = u * w
+                    val env = taperWindow(u) * maxAmp * ampScale
+                    val wave = 0.56f * sin(u * PI * freq + phase2 * (1.1f + f * 0.2f) + f * 2.1f).toFloat() +
+                        0.28f * cos(u * PI * (freq * 2.1f) - phase1 + f).toFloat()
+                    val y = centerY + sign * env * (0.45f + 0.55f * wave)
+                    if (i == 0) fPath.moveTo(x, y) else fPath.lineTo(x, y)
+                }
+                drawPath(
+                    path = fPath,
+                    brush = filamentBrush,
+                    style = Stroke(width = (0.95f - f * 0.10f).dp.toPx(), cap = StrokeCap.Round),
+                    blendMode = BlendMode.Plus
+                )
+            }
+
+            // 4. Crisp luminous center spine hairline anchoring both sharp tips
+            drawLine(
+                brush = Brush.horizontalGradient(
+                    colorStops = arrayOf(
+                        0.00f to Color.Transparent,
+                        0.12f to Color(0xFF6EF7EA).copy(alpha = (0.26f + 0.24f * smoothLevel).coerceIn(0f, 1f)),
+                        0.50f to Color(0xFFBDF8FF).copy(alpha = (0.38f + 0.28f * smoothLevel).coerceIn(0f, 1f)),
+                        0.88f to Color(0xFF3E8CFF).copy(alpha = (0.24f + 0.22f * smoothLevel).coerceIn(0f, 1f)),
+                        1.00f to Color.Transparent
+                    )
+                ),
+                start = Offset(0f, centerY),
+                end = Offset(w, centerY),
+                strokeWidth = spineStroke,
+                cap = StrokeCap.Round,
+                blendMode = BlendMode.Plus
+            )
+
+            // 5. Eight drifting micro-sparkle particles along the wave envelope
+            for (s in 0 until 8) {
+                val baseU = 0.18f + (s / 7f) * 0.64f
+                val driftU = (baseU + 0.035f * sin(phase2 + s * 1.37f)).coerceIn(0.08f, 0.92f)
+                val env = taperWindow(driftU)
+                val px = driftU * w
+                val py = centerY + env * maxAmp * (0.68f + 0.16f * smoothLevel) * sin(phase1 * 1.15f + s * 1.95f)
+                val pulse = (0.55f + 0.45f * sin(phase2 * 2f + s * 1.6f)).coerceIn(0.15f, 1f)
+                val pAlpha = (env * pulse * (0.50f + 0.45f * smoothLevel)).coerceIn(0f, 1f)
+                if (pAlpha <= 0.02f) continue
+
+                val tint = if (driftU < 0.52f) Color(0xFF7DFBF0) else Color(0xFF56B8FF)
+                val haloR = (3.5f + (s % 3) * 0.9f).dp.toPx()
+                val coreR = (1.0f + (s % 2) * 0.55f).dp.toPx()
+
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            tint.copy(alpha = (pAlpha * 0.55f).coerceIn(0f, 1f)),
+                            Color.Transparent
+                        ),
+                        center = Offset(px, py),
+                        radius = haloR
+                    ),
+                    radius = haloR,
+                    center = Offset(px, py),
+                    blendMode = BlendMode.Plus
+                )
+                drawCircle(
+                    color = Color(0xFFDFFBFF).copy(alpha = pAlpha),
+                    radius = coreR,
+                    center = Offset(px, py),
+                    blendMode = BlendMode.Plus
                 )
             }
         }

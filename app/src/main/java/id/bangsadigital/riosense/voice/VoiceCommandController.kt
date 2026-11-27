@@ -227,7 +227,7 @@ class VoiceCommandController(
 
                 override fun onBeginningOfSpeech() = Unit
                 override fun onRmsChanged(rmsdB: Float) {
-                    val normalized = ((rmsdB + 2.0f) / 11.0f).coerceIn(0f, 1f)
+                    val normalized = ((rmsdB + 1.2f) / 9.2f).coerceIn(0f, 1f)
                     _uiState.update { it.copy(audioLevel = normalized) }
                 }
                 override fun onBufferReceived(buffer: ByteArray?) = Unit
