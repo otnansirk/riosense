@@ -53,6 +53,15 @@ enum class AppDrawerBackground {
 }
 
 /**
+ * Scope for applying a selected background preset from the bottom picker (Widgets, Apps, or Both).
+ */
+enum class BackgroundTarget {
+    WIDGETS,
+    APPS,
+    BOTH
+}
+
+/**
  * Persistent settings for RioSense Launcher Mode and the Global Obsidian Dock.
  */
 data class LauncherSettings(
@@ -61,6 +70,7 @@ data class LauncherSettings(
     val dockPosition: DockPosition = DockPosition.BOTTOM,
     val pinnedPackages: List<String> = emptyList(),
     val appIconSize: AppIconSize = AppIconSize.MEDIUM,
+    val widgetsBackground: AppDrawerBackground = AppDrawerBackground.OBSIDIAN_PURE,
     val appDrawerBackground: AppDrawerBackground = AppDrawerBackground.OBSIDIAN_PURE
 ) {
     companion object {

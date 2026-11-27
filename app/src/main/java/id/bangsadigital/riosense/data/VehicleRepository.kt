@@ -1544,8 +1544,16 @@ class VehicleRepository(context: Context? = null) {
         updateLauncherSettings { it.copy(appIconSize = size) }
     }
 
+    fun setWidgetsBackground(background: AppDrawerBackground) {
+        updateLauncherSettings { it.copy(widgetsBackground = background) }
+    }
+
     fun setAppDrawerBackground(background: AppDrawerBackground) {
         updateLauncherSettings { it.copy(appDrawerBackground = background) }
+    }
+
+    fun setSharedBackground(background: AppDrawerBackground) {
+        updateLauncherSettings { it.copy(widgetsBackground = background, appDrawerBackground = background) }
     }
 
     fun togglePinnedDockApp(packageName: String): Boolean {

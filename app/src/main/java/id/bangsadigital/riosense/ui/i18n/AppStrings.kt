@@ -241,6 +241,9 @@ data class AppStrings(
     val bgVelvetMaroon: String,
     val bgMidnightSapphire: String,
     val bgEmeraldNoir: String,
+    val bgTargetWidgets: String,
+    val bgTargetApps: String,
+    val bgTargetBoth: String,
     val backgroundTitle: String,
     val tapOutsideToFinish: String
 )
@@ -466,6 +469,9 @@ private val EnglishStrings = AppStrings(
     bgVelvetMaroon = "Maroon",
     bgMidnightSapphire = "Sapphire",
     bgEmeraldNoir = "Emerald",
+    bgTargetWidgets = "Widgets",
+    bgTargetApps = "Apps",
+    bgTargetBoth = "Both",
     backgroundTitle = "Background",
     tapOutsideToFinish = "Tap outside to finish"
 )
@@ -686,6 +692,9 @@ private val IndonesianStrings = AppStrings(
     bgVelvetMaroon = "Marun",
     bgMidnightSapphire = "Safir",
     bgEmeraldNoir = "Zamrud",
+    bgTargetWidgets = "Widget",
+    bgTargetApps = "Apps",
+    bgTargetBoth = "Keduanya",
     backgroundTitle = "Background",
     tapOutsideToFinish = "Ketuk di luar untuk selesai"
 )

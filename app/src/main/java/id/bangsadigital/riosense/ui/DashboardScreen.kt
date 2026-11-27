@@ -75,6 +75,7 @@ import id.bangsadigital.riosense.VoiceDashboardNavigation
 import id.bangsadigital.riosense.data.VehicleRepository
 import id.bangsadigital.riosense.launcher.InstalledAppsRepository
 import id.bangsadigital.riosense.launcher.RioSenseAppWidgetController
+import id.bangsadigital.riosense.model.BackgroundTarget
 import id.bangsadigital.riosense.model.BuiltInWidgetType
 import id.bangsadigital.riosense.model.DockDisplayMode
 import id.bangsadigital.riosense.model.DockPosition
@@ -107,6 +108,7 @@ import id.bangsadigital.riosense.ui.components.AppSpotlightSearchOverlay
 import id.bangsadigital.riosense.ui.components.ControlsMenuSheet
 import id.bangsadigital.riosense.ui.components.ControlsTab
 import id.bangsadigital.riosense.ui.components.CustomizableWidgetGridPage
+import id.bangsadigital.riosense.ui.components.HomeShowroomStageBackdrop
 import id.bangsadigital.riosense.ui.components.InAppObsidianDock
 import id.bangsadigital.riosense.ui.components.KiaRioInteractiveStage
 import id.bangsadigital.riosense.ui.components.LauncherAppDrawerHeader
@@ -151,6 +153,7 @@ fun RioSenseDashboardScreen(
     var showSimulatorDrawer by remember { mutableStateOf(false) }
     var showControlsDrawer by remember { mutableStateOf(false) }
     var showBackgroundPicker by remember { mutableStateOf(false) }
+    var backgroundPickerTarget by remember { mutableStateOf(BackgroundTarget.APPS) }
     var showSpotlightSearch by remember { mutableStateOf(false) }
     var controlsInitialTab by remember { mutableStateOf<ControlsTab?>(null) }
     var isCarDragging by remember { mutableStateOf(false) }
@@ -305,10 +308,36 @@ fun RioSenseDashboardScreen(
 
         val absolutePage = pagerState.currentPage + pagerState.currentPageOffsetFraction
         val drawerReveal = (absolutePage - homePageIndex).coerceIn(0f, 1f)
+        val widgetsReveal = (homePageIndex - absolutePage).coerceIn(0f, 1f)
+        val homeReveal = (1f - maxOf(drawerReveal, widgetsReveal)).coerceIn(0f, 1f)
         val screenWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
 
-        // Stationary procedural monochrome luxury Canvas background behind App Drawer pages (Apps 1..N)
-        if (absolutePage > homePageIndex + 0.001f) {
+        // Home hero stage backdrop: Deep Obsidian with Auto-Sync studio spotlight & floor horizon
+        if (homeReveal > 0.001f) {
+            HomeShowroomStageBackdrop(
+                widgetsPreset = launcherSettings.widgetsBackground,
+                appsPreset = launcherSettings.appDrawerBackground,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = homeReveal }
+            )
+        }
+
+        // Left Widgets workspace customizable Canvas background (Widgets 1..M)
+        if (widgetsReveal > 0.001f) {
+            AppDrawerBackgroundCanvas(
+                preset = launcherSettings.widgetsBackground,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = -(1f - widgetsReveal) * screenWidthPx
+                        alpha = widgetsReveal
+                    }
+            )
+        }
+
+        // Right App Drawer customizable Canvas background (Apps 1..N)
+        if (drawerReveal > 0.001f) {
             AppDrawerBackgroundCanvas(
                 preset = launcherSettings.appDrawerBackground,
                 modifier = Modifier
@@ -489,7 +518,10 @@ fun RioSenseDashboardScreen(
                                 s.unpinnedFromDockFeedback(app.label)
                             }
                         },
-                        onOpenBackgroundPicker = { showBackgroundPicker = true }
+                        onOpenBackgroundPicker = {
+                            backgroundPickerTarget = BackgroundTarget.APPS
+                            showBackgroundPicker = true
+                        }
                     )
                 }
             }
@@ -668,11 +700,39 @@ fun RioSenseDashboardScreen(
             onDismiss = { showWidgetPicker = false }
         )
 
-        // Slide-up live Background Preset Picker over the App List page
+        // Slide-up live Background Preset Picker for Widgets, Apps, or Both
         AppDrawerBackgroundPickerOverlay(
             visible = showBackgroundPicker,
-            selectedBackground = launcherSettings.appDrawerBackground,
-            onSelectBackground = { bg -> repository.setAppDrawerBackground(bg) },
+            selectedTarget = backgroundPickerTarget,
+            widgetsBackground = launcherSettings.widgetsBackground,
+            appDrawerBackground = launcherSettings.appDrawerBackground,
+            onSelectTarget = { target ->
+                backgroundPickerTarget = target
+                when (target) {
+                    BackgroundTarget.WIDGETS -> {
+                        if (pagerState.currentPage >= homePageIndex) {
+                            scope.launch { pagerState.animateScrollToPage((homePageIndex - 1).coerceAtLeast(0)) }
+                        }
+                    }
+                    BackgroundTarget.APPS -> {
+                        if (pagerState.currentPage < appsStartPageIndex) {
+                            scope.launch { pagerState.animateScrollToPage(appsStartPageIndex) }
+                        }
+                    }
+                    BackgroundTarget.BOTH -> {
+                        if (pagerState.currentPage == homePageIndex) {
+                            scope.launch { pagerState.animateScrollToPage(appsStartPageIndex) }
+                        }
+                    }
+                }
+            },
+            onSelectBackground = { target, bg ->
+                when (target) {
+                    BackgroundTarget.WIDGETS -> repository.setWidgetsBackground(bg)
+                    BackgroundTarget.APPS -> repository.setAppDrawerBackground(bg)
+                    BackgroundTarget.BOTH -> repository.setSharedBackground(bg)
+                }
+            },
             onDismiss = { showBackgroundPicker = false }
         )
 
@@ -793,8 +853,17 @@ fun RioSenseDashboardScreen(
                     onOpenBackgroundPicker = {
                         showControlsDrawer = false
                         showSimulatorDrawer = false
-                        if (pagerState.currentPage < appsStartPageIndex) {
-                            scope.launch { pagerState.animateScrollToPage(appsStartPageIndex) }
+                        when {
+                            pagerState.currentPage < homePageIndex -> {
+                                backgroundPickerTarget = BackgroundTarget.WIDGETS
+                            }
+                            pagerState.currentPage >= appsStartPageIndex -> {
+                                backgroundPickerTarget = BackgroundTarget.APPS
+                            }
+                            else -> {
+                                backgroundPickerTarget = BackgroundTarget.APPS
+                                scope.launch { pagerState.animateScrollToPage(appsStartPageIndex) }
+                            }
                         }
                         showBackgroundPicker = true
                     },

@@ -73,6 +73,7 @@ class RioSensePreferences(context: Context) {
         private const val KEY_LAUNCHER_DOCK_PINNED_JSON = "launcher_dock_pinned_json"
         private const val KEY_LAUNCHER_DOCK_PINNED_INIT = "launcher_dock_pinned_init_v1"
         private const val KEY_LAUNCHER_APP_ICON_SIZE = "launcher_app_icon_size"
+        private const val KEY_LAUNCHER_WIDGETS_BG = "launcher_widgets_bg"
         private const val KEY_LAUNCHER_APP_DRAWER_BG = "launcher_app_drawer_bg"
         private const val KEY_WIDGET_WORKSPACE_JSON = "widget_workspace_json"
     }
@@ -458,6 +459,13 @@ class RioSensePreferences(context: Context) {
             )
         }.getOrDefault(AppDrawerBackground.OBSIDIAN_PURE)
 
+        val widgetsBg = runCatching {
+            AppDrawerBackground.valueOf(
+                prefs.getString(KEY_LAUNCHER_WIDGETS_BG, drawerBg.name)
+                    ?: drawerBg.name
+            )
+        }.getOrDefault(drawerBg)
+
         val initialized = prefs.getBoolean(KEY_LAUNCHER_DOCK_PINNED_INIT, false)
         val pinned = if (!initialized) {
             val defaults = InstalledAppsRepository.loadDefaultPinnedPackages(appContext)
@@ -467,6 +475,7 @@ class RioSensePreferences(context: Context) {
                 dockPosition = position,
                 pinnedPackages = defaults,
                 appIconSize = iconSize,
+                widgetsBackground = widgetsBg,
                 appDrawerBackground = drawerBg
             )
             saveLauncherSettings(initial)
@@ -491,6 +500,7 @@ class RioSensePreferences(context: Context) {
             dockPosition = position,
             pinnedPackages = pinned,
             appIconSize = iconSize,
+            widgetsBackground = widgetsBg,
             appDrawerBackground = drawerBg
         )
     }
@@ -504,6 +514,7 @@ class RioSensePreferences(context: Context) {
             .putString(KEY_LAUNCHER_DOCK_POSITION, settings.dockPosition.name)
             .putString(KEY_LAUNCHER_DOCK_PINNED_JSON, arr.toString())
             .putString(KEY_LAUNCHER_APP_ICON_SIZE, settings.appIconSize.name)
+            .putString(KEY_LAUNCHER_WIDGETS_BG, settings.widgetsBackground.name)
             .putString(KEY_LAUNCHER_APP_DRAWER_BG, settings.appDrawerBackground.name)
             .putBoolean(KEY_LAUNCHER_DOCK_PINNED_INIT, true)
             .apply()

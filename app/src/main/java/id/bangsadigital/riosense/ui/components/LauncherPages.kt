@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioManager
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -85,7 +87,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -106,6 +110,7 @@ import id.bangsadigital.riosense.launcher.WeatherRepository
 import id.bangsadigital.riosense.launcher.WeatherSnapshot
 import id.bangsadigital.riosense.model.AppDrawerBackground
 import id.bangsadigital.riosense.model.AppIconSize
+import id.bangsadigital.riosense.model.BackgroundTarget
 import id.bangsadigital.riosense.model.DockDisplayMode
 import id.bangsadigital.riosense.model.DockPosition
 import id.bangsadigital.riosense.model.InstalledAppInfo
@@ -2132,18 +2137,166 @@ fun appDrawerBackgroundLabel(preset: AppDrawerBackground, s: AppStrings): String
     AppDrawerBackground.EMERALD_NOIR -> s.bgEmeraldNoir
 }
 
+private fun showroomAmbientColor(preset: AppDrawerBackground): Color = when (preset) {
+    AppDrawerBackground.OBSIDIAN_PURE -> Color(0xFF9AA7BC)
+    AppDrawerBackground.CARBON_WEAVE -> Color(0xFF8C97AB)
+    AppDrawerBackground.BRUSHED_TITANIUM -> Color(0xFFC8D2E2)
+    AppDrawerBackground.TOPO_CONTOUR -> Color(0xFFB4C0D2)
+    AppDrawerBackground.MONOLITH_GRID -> Color(0xFFA6B4CC)
+    AppDrawerBackground.CHAMPAGNE_GOLD -> Color(0xFFDAB77E)
+    AppDrawerBackground.ESPRESSO_BRONZE -> Color(0xFFC58A5D)
+    AppDrawerBackground.VELVET_MAROON -> Color(0xFFB84359)
+    AppDrawerBackground.MIDNIGHT_SAPPHIRE -> Color(0xFF4C86D8)
+    AppDrawerBackground.EMERALD_NOIR -> Color(0xFF3E9E80)
+}
+
 /**
- * Interactive slide-up bottom preset carousel rendered directly over the live App List screen
- * so the user immediately sees background changes in real time and taps outside to finish.
+ * Showroom Spotlight + Horizon backdrop for the Home hero stage that stays faithful to Deep Obsidian
+ * while subtly auto-syncing its studio lighting and floor reflection hue to the Widgets & Apps themes.
+ */
+@Composable
+fun HomeShowroomStageBackdrop(
+    widgetsPreset: AppDrawerBackground,
+    appsPreset: AppDrawerBackground,
+    modifier: Modifier = Modifier
+) {
+    val leftAccent by animateColorAsState(
+        targetValue = showroomAmbientColor(widgetsPreset),
+        animationSpec = tween(420),
+        label = "homeShowroomLeftAccent"
+    )
+    val rightAccent by animateColorAsState(
+        targetValue = showroomAmbientColor(appsPreset),
+        animationSpec = tween(420),
+        label = "homeShowroomRightAccent"
+    )
+    val centerAccent = lerp(leftAccent, rightAccent, 0.5f)
+
+    Canvas(modifier = modifier.clipToBounds()) {
+        val w = size.width
+        val h = size.height
+        val horizonY = h * 0.67f
+
+        // 1. Deep Obsidian base
+        drawRect(color = ObsidianColors.DeepObsidian)
+
+        // 2. Soft overhead studio spotlight illuminating the center 360° car stage
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    centerAccent.copy(alpha = 0.18f),
+                    centerAccent.copy(alpha = 0.06f),
+                    Color.Transparent
+                ),
+                center = Offset(w * 0.5f, h * 0.06f),
+                radius = w * 0.58f
+            )
+        )
+
+        // 3. Subtle peripheral side ambient washes harmonizing left (Widgets) and right (Apps) themes
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    leftAccent.copy(alpha = 0.08f),
+                    Color.Transparent
+                ),
+                center = Offset(w * 0.14f, h * 0.54f),
+                radius = w * 0.36f
+            )
+        )
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    rightAccent.copy(alpha = 0.08f),
+                    Color.Transparent
+                ),
+                center = Offset(w * 0.86f, h * 0.54f),
+                radius = w * 0.36f
+            )
+        )
+
+        // 4. Subtle atmospheric mist resting just above the showroom horizon
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    centerAccent.copy(alpha = 0.055f),
+                    Color.Transparent
+                ),
+                startY = horizonY - h * 0.12f,
+                endY = horizonY + h * 0.03f
+            )
+        )
+
+        // 5. Floor reflection pool beneath the vehicle clipped at the horizon line
+        clipRect(top = horizonY) {
+            drawRect(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        centerAccent.copy(alpha = 0.14f),
+                        centerAccent.copy(alpha = 0.04f),
+                        Color.Transparent
+                    ),
+                    center = Offset(w * 0.5f, horizonY + h * 0.06f),
+                    radius = w * 0.42f
+                )
+            )
+        }
+
+        // 6. Crisp tapered showroom horizon hairline behind the vehicle
+        drawLine(
+            brush = Brush.horizontalGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    leftAccent.copy(alpha = 0.18f),
+                    centerAccent.copy(alpha = 0.36f),
+                    rightAccent.copy(alpha = 0.18f),
+                    Color.Transparent
+                ),
+                startX = w * 0.08f,
+                endX = w * 0.92f
+            ),
+            start = Offset(w * 0.08f, horizonY),
+            end = Offset(w * 0.92f, horizonY),
+            strokeWidth = 0.9.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+
+        // 7. Gentle bottom dark fade so footer alert banner and liquid dots remain razor sharp
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    ObsidianColors.DeepObsidian.copy(alpha = 0.85f)
+                ),
+                startY = h * 0.82f,
+                endY = h
+            )
+        )
+    }
+}
+
+/**
+ * Interactive slide-up bottom preset carousel rendered directly over the live Widgets/Apps screens
+ * so the user immediately sees background changes in real time for Widgets, Apps, or Both
+ * and taps outside to finish.
  */
 @Composable
 fun BoxScope.AppDrawerBackgroundPickerOverlay(
     visible: Boolean,
-    selectedBackground: AppDrawerBackground,
-    onSelectBackground: (AppDrawerBackground) -> Unit,
+    selectedTarget: BackgroundTarget,
+    widgetsBackground: AppDrawerBackground,
+    appDrawerBackground: AppDrawerBackground,
+    onSelectTarget: (BackgroundTarget) -> Unit,
+    onSelectBackground: (BackgroundTarget, AppDrawerBackground) -> Unit,
     onDismiss: () -> Unit
 ) {
     val s = appStrings()
+    val activePreset: AppDrawerBackground? = when (selectedTarget) {
+        BackgroundTarget.WIDGETS -> widgetsBackground
+        BackgroundTarget.APPS -> appDrawerBackground
+        BackgroundTarget.BOTH -> if (widgetsBackground == appDrawerBackground) appDrawerBackground else null
+    }
 
     // 100% transparent outside-tap catcher so live background changes remain clearly visible
     if (visible) {
@@ -2185,6 +2338,56 @@ fun BoxScope.AppDrawerBackgroundPickerOverlay(
                     .background(ObsidianColors.ObsidianSubBorder.copy(alpha = 0.75f))
             )
 
+            val targetTabs = listOf(
+                BackgroundTarget.WIDGETS to s.bgTargetWidgets,
+                BackgroundTarget.APPS to s.bgTargetApps,
+                BackgroundTarget.BOTH to s.bgTargetBoth
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                targetTabs.forEach { (target, label) ->
+                    val isSelected = selectedTarget == target
+                    Column(
+                        modifier = Modifier
+                            .width(IntrinsicSize.Max)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { onSelectTarget(target) },
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = label,
+                            color = if (isSelected) ObsidianColors.PureSilver else ObsidianColors.MutedSilver,
+                            fontSize = 11.5.sp,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                            modifier = Modifier.padding(top = 9.dp, bottom = 7.dp)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(2.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isSelected) ObsidianColors.PureSilver else Color.Transparent
+                                )
+                        )
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(0.75.dp)
+                    .background(Color(0xFF1D222D))
+            )
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2198,11 +2401,11 @@ fun BoxScope.AppDrawerBackgroundPickerOverlay(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     items(AppDrawerBackground.entries, key = { it.name }) { preset ->
-                        val selected = preset == selectedBackground
+                        val selected = preset == activePreset
                         Column(
                             modifier = Modifier
                                 .width(132.dp)
-                                .clickable { onSelectBackground(preset) },
+                                .clickable { onSelectBackground(selectedTarget, preset) },
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Box(
