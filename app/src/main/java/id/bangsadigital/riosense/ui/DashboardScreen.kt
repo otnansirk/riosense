@@ -42,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -73,6 +74,8 @@ import id.bangsadigital.riosense.R
 import id.bangsadigital.riosense.VoiceDashboardNavigation
 import id.bangsadigital.riosense.data.VehicleRepository
 import id.bangsadigital.riosense.launcher.InstalledAppsRepository
+import id.bangsadigital.riosense.launcher.RioSenseAppWidgetController
+import id.bangsadigital.riosense.model.BuiltInWidgetType
 import id.bangsadigital.riosense.model.DockDisplayMode
 import id.bangsadigital.riosense.model.DockPosition
 import id.bangsadigital.riosense.model.InstalledAppInfo
@@ -80,11 +83,16 @@ import id.bangsadigital.riosense.model.KiaRioPaintColor
 import id.bangsadigital.riosense.model.LAUNCHER_PAGE_APPS
 import id.bangsadigital.riosense.model.LAUNCHER_PAGE_HOME
 import id.bangsadigital.riosense.model.LAUNCHER_PAGE_WIDGETS
+import id.bangsadigital.riosense.model.MAX_WIDGET_PAGES
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.MaintenanceStatus
+import id.bangsadigital.riosense.model.PlacedWidgetItem
 import id.bangsadigital.riosense.model.TopBarBrandLogo
 import id.bangsadigital.riosense.model.VehicleTelemetry
 import id.bangsadigital.riosense.model.VoiceButtonStyle
+import id.bangsadigital.riosense.model.WIDGET_GRID_ROWS
+import id.bangsadigital.riosense.model.WidgetItemKind
+import id.bangsadigital.riosense.model.findFirstFreeSlot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -98,16 +106,17 @@ import id.bangsadigital.riosense.ui.components.AppDrawerBackgroundPickerOverlay
 import id.bangsadigital.riosense.ui.components.AppSpotlightSearchOverlay
 import id.bangsadigital.riosense.ui.components.ControlsMenuSheet
 import id.bangsadigital.riosense.ui.components.ControlsTab
+import id.bangsadigital.riosense.ui.components.CustomizableWidgetGridPage
 import id.bangsadigital.riosense.ui.components.InAppObsidianDock
 import id.bangsadigital.riosense.ui.components.KiaRioInteractiveStage
 import id.bangsadigital.riosense.ui.components.LauncherAppDrawerHeader
 import id.bangsadigital.riosense.ui.components.LauncherAppDrawerPage
-import id.bangsadigital.riosense.ui.components.LauncherWidgetsPage
 import id.bangsadigital.riosense.ui.components.LeftSpeedAndSecurityPanel
 import id.bangsadigital.riosense.ui.components.MinimizedFloatingPillView
 import id.bangsadigital.riosense.ui.components.RightEngineTelemetryPanel
 import id.bangsadigital.riosense.ui.components.SimulatorAndSettingsSheet
 import id.bangsadigital.riosense.ui.components.TripRouteVectorIcon
+import id.bangsadigital.riosense.ui.components.WidgetPickerOverlay
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
 import id.bangsadigital.riosense.ui.i18n.LocalAppLanguage
 import id.bangsadigital.riosense.ui.i18n.appStrings
@@ -126,6 +135,7 @@ fun RioSenseDashboardScreen(
     repository: VehicleRepository,
     voiceUiState: VoiceUiState,
     voiceNavigation: VoiceDashboardNavigation?,
+    appWidgetController: RioSenseAppWidgetController,
     requestedLauncherPage: Pair<Int, Long>? = null,
     hasOverlayPermission: Boolean = false,
     onRequestOverlayPermission: () -> Unit = {},
@@ -167,7 +177,11 @@ fun RioSenseDashboardScreen(
     val tripHistory by repository.tripHistory.collectAsState()
     val activeTrip by repository.activeTrip.collectAsState()
     val launcherSettings by repository.launcherSettings.collectAsState()
+    val widgetWorkspace by repository.widgetWorkspace.collectAsState()
     val dueServiceItems = remember(maintenance) { maintenance.dueOrOverdueItems() }
+    var isWidgetEditMode by remember { mutableStateOf(false) }
+    var showWidgetPicker by remember { mutableStateOf(false) }
+    var pendingTargetWidgetPage by remember { mutableStateOf<Int?>(null) }
 
     if (telemetry.isMinimized) {
         MinimizedFloatingPillView(
@@ -197,12 +211,38 @@ fun RioSenseDashboardScreen(
         val appChunks = remember(installedApps, appsPerPage) {
             installedApps.chunked(appsPerPage).ifEmpty { listOf(emptyList()) }
         }
-        val totalPages = 2 + appChunks.size
+        val widgetGridCols = if (maxWidth >= 840.dp) 8 else 6
+        val widgetGridRows = WIDGET_GRID_ROWS
+
+        LaunchedEffect(widgetGridCols) {
+            repository.ensureWidgetWorkspaceInitialized(widgetGridCols)
+        }
+
+        val widgetPageCount = widgetWorkspace.pageCount.coerceIn(1, MAX_WIDGET_PAGES)
+        val homePageIndex = widgetPageCount
+        val appsStartPageIndex = widgetPageCount + 1
+        val totalPages = widgetPageCount + 1 + appChunks.size
 
         val pagerState = rememberPagerState(
-            initialPage = LAUNCHER_PAGE_HOME,
+            initialPage = homePageIndex,
             pageCount = { totalPages }
         )
+
+        var prevWidgetPageCount by remember { mutableIntStateOf(widgetPageCount) }
+        LaunchedEffect(widgetPageCount) {
+            val delta = widgetPageCount - prevWidgetPageCount
+            val requestedWidgetPage = pendingTargetWidgetPage
+            pendingTargetWidgetPage = null
+            if (requestedWidgetPage != null) {
+                val targetPagerIndex = (homePageIndex - 1 - requestedWidgetPage)
+                    .coerceIn(0, (homePageIndex - 1).coerceAtLeast(0))
+                pagerState.animateScrollToPage(targetPagerIndex)
+            } else if (delta != 0) {
+                val shifted = (pagerState.currentPage + delta).coerceIn(0, totalPages - 1)
+                pagerState.scrollToPage(shifted)
+            }
+            prevWidgetPageCount = widgetPageCount
+        }
 
         LaunchedEffect(totalPages) {
             if (pagerState.currentPage >= totalPages) {
@@ -210,24 +250,34 @@ fun RioSenseDashboardScreen(
             }
         }
 
-        LaunchedEffect(requestedLauncherPage, totalPages) {
-            val target = requestedLauncherPage?.first ?: return@LaunchedEffect
+        LaunchedEffect(requestedLauncherPage, totalPages, homePageIndex, appsStartPageIndex) {
+            val rawTarget = requestedLauncherPage?.first ?: return@LaunchedEffect
+            val target = when (rawTarget) {
+                LAUNCHER_PAGE_WIDGETS -> (homePageIndex - 1).coerceAtLeast(0)
+                LAUNCHER_PAGE_HOME -> homePageIndex
+                LAUNCHER_PAGE_APPS -> appsStartPageIndex
+                else -> rawTarget.coerceIn(0, totalPages - 1)
+            }
+            isWidgetEditMode = false
+            showWidgetPicker = false
             showSpotlightSearch = false
             showBackgroundPicker = false
             showSimulatorDrawer = false
             showControlsDrawer = false
-            pagerState.animateScrollToPage(target.coerceIn(LAUNCHER_PAGE_WIDGETS, totalPages - 1))
+            pagerState.animateScrollToPage(target.coerceIn(0, totalPages - 1))
         }
 
         LaunchedEffect(voiceNavigation) {
             when (voiceNavigation) {
                 is VoiceDashboardNavigation.OpenControls -> {
+                    showWidgetPicker = false
                     showSpotlightSearch = false
                     showSimulatorDrawer = false
                     controlsInitialTab = voiceNavigation.tab
                     showControlsDrawer = true
                 }
                 is VoiceDashboardNavigation.CloseMenus -> {
+                    showWidgetPicker = false
                     showSpotlightSearch = false
                     showSimulatorDrawer = false
                     showControlsDrawer = false
@@ -237,25 +287,27 @@ fun RioSenseDashboardScreen(
         }
 
         BackHandler(
-            enabled = showSpotlightSearch || showBackgroundPicker || showSimulatorDrawer || showControlsDrawer || pagerState.currentPage != LAUNCHER_PAGE_HOME
+            enabled = showWidgetPicker || isWidgetEditMode || showSpotlightSearch || showBackgroundPicker || showSimulatorDrawer || showControlsDrawer || pagerState.currentPage != homePageIndex
         ) {
             when {
+                showWidgetPicker -> showWidgetPicker = false
+                isWidgetEditMode -> isWidgetEditMode = false
                 showSpotlightSearch -> showSpotlightSearch = false
                 showBackgroundPicker -> showBackgroundPicker = false
                 showSimulatorDrawer -> showSimulatorDrawer = false
                 showControlsDrawer -> showControlsDrawer = false
-                pagerState.currentPage != LAUNCHER_PAGE_HOME -> {
-                    scope.launch { pagerState.animateScrollToPage(LAUNCHER_PAGE_HOME) }
+                pagerState.currentPage != homePageIndex -> {
+                    scope.launch { pagerState.animateScrollToPage(homePageIndex) }
                 }
             }
         }
 
         val absolutePage = pagerState.currentPage + pagerState.currentPageOffsetFraction
-        val drawerReveal = (absolutePage - 1f).coerceIn(0f, 1f)
+        val drawerReveal = (absolutePage - homePageIndex).coerceIn(0f, 1f)
         val screenWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
 
         // Stationary procedural monochrome luxury Canvas background behind App Drawer pages (Apps 1..N)
-        if (absolutePage > 1.001f) {
+        if (absolutePage > homePageIndex + 0.001f) {
             AppDrawerBackgroundCanvas(
                 preset = launcherSettings.appDrawerBackground,
                 modifier = Modifier
@@ -269,27 +321,62 @@ fun RioSenseDashboardScreen(
 
         HorizontalPager(
             state = pagerState,
-            userScrollEnabled = !isCarDragging && !showControlsDrawer && !showSimulatorDrawer && !showBackgroundPicker && !showSpotlightSearch,
+            userScrollEnabled = !isCarDragging && !isWidgetEditMode && !showWidgetPicker && !showControlsDrawer && !showSimulatorDrawer && !showBackgroundPicker && !showSpotlightSearch,
             modifier = Modifier.fillMaxSize()
         ) { page ->
-            when (page) {
-                LAUNCHER_PAGE_WIDGETS -> {
-                    LauncherWidgetsPage(
+            when {
+                page < homePageIndex -> {
+                    val widgetPageIdx = (homePageIndex - 1 - page).coerceIn(0, widgetPageCount - 1)
+                    val pageItems = remember(widgetWorkspace.items, widgetPageIdx) {
+                        widgetWorkspace.items.filter { it.pageIndex == widgetPageIdx }
+                    }
+                    CustomizableWidgetGridPage(
+                        pageIndex = widgetPageIdx,
+                        totalWidgetPages = widgetPageCount,
+                        items = pageItems,
+                        gridCols = widgetGridCols,
+                        gridRows = widgetGridRows,
                         telemetry = telemetry,
                         maintenance = maintenance,
-                        isPageVisible = pagerState.currentPage == LAUNCHER_PAGE_WIDGETS,
+                        isPageVisible = pagerState.currentPage == page,
+                        isEditMode = isWidgetEditMode,
+                        appWidgetController = appWidgetController,
+                        onToggleEditMode = { isWidgetEditMode = it },
+                        onOpenWidgetPicker = { showWidgetPicker = true },
+                        onAddPage = {
+                            if (widgetPageCount < MAX_WIDGET_PAGES) {
+                                val created = repository.addWidgetPage()
+                                pendingTargetWidgetPage = created
+                                isWidgetEditMode = true
+                            }
+                        },
+                        onRemovePage = {
+                            val removedIds = repository.removeWidgetPage(widgetPageIdx)
+                            removedIds.forEach { appWidgetController.deleteWidgetId(it) }
+                            pendingTargetWidgetPage = (widgetPageIdx - 1).coerceAtLeast(0)
+                        },
+                        onCommitPageLayout = { updatedItems ->
+                            repository.replaceWidgetPageItems(widgetPageIdx, updatedItems)
+                        },
+                        onRemoveItem = { id ->
+                            val removed = repository.removeWidgetItem(id)
+                            if (removed != null && removed.appWidgetId > 0) {
+                                appWidgetController.deleteWidgetId(removed.appWidgetId)
+                            }
+                        },
                         onOpenControlsTab = { tab ->
                             showSimulatorDrawer = false
                             controlsInitialTab = tab
                             showControlsDrawer = true
                         },
                         onBackToHome = {
-                            scope.launch { pagerState.animateScrollToPage(LAUNCHER_PAGE_HOME) }
+                            isWidgetEditMode = false
+                            scope.launch { pagerState.animateScrollToPage(homePageIndex) }
                         }
                     )
                 }
 
-                LAUNCHER_PAGE_HOME -> {
+                page == homePageIndex -> {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -393,7 +480,7 @@ fun RioSenseDashboardScreen(
                 }
 
                 else -> {
-                    val appPageIdx = (page - LAUNCHER_PAGE_APPS).coerceIn(0, appChunks.lastIndex)
+                    val appPageIdx = (page - appsStartPageIndex).coerceIn(0, appChunks.lastIndex)
                     LauncherAppDrawerPage(
                         pageApps = appChunks[appPageIdx],
                         columns = appGridCols,
@@ -414,8 +501,8 @@ fun RioSenseDashboardScreen(
         }
 
         // Stationary App Drawer header (slides cleanly from Home -> Apps, remains locked across Apps 1..N)
-        if (absolutePage > 1.001f) {
-            val currentAppPageIdx = (pagerState.currentPage - LAUNCHER_PAGE_APPS).coerceIn(0, appChunks.lastIndex)
+        if (absolutePage > homePageIndex + 0.001f) {
+            val currentAppPageIdx = (pagerState.currentPage - appsStartPageIndex).coerceIn(0, appChunks.lastIndex)
             LauncherAppDrawerHeader(
                 totalAppCount = installedApps.size,
                 appPageIndex = currentAppPageIdx,
@@ -427,7 +514,7 @@ fun RioSenseDashboardScreen(
                     showControlsDrawer = true
                 },
                 onBackToHome = {
-                    scope.launch { pagerState.animateScrollToPage(LAUNCHER_PAGE_HOME) }
+                    scope.launch { pagerState.animateScrollToPage(homePageIndex) }
                 },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -475,14 +562,117 @@ fun RioSenseDashboardScreen(
             InAppObsidianDock(
                 settings = launcherSettings,
                 onGoHome = {
-                    scope.launch { pagerState.animateScrollToPage(LAUNCHER_PAGE_HOME) }
+                    scope.launch { pagerState.animateScrollToPage(homePageIndex) }
                 },
                 onOpenApps = {
-                    scope.launch { pagerState.animateScrollToPage(LAUNCHER_PAGE_APPS) }
+                    scope.launch { pagerState.animateScrollToPage(appsStartPageIndex) }
                 },
                 onLaunchApp = { pkg -> InstalledAppsRepository.launchApp(context, pkg) }
             )
         }
+
+        // Modal picker to add RioSense built-in or third-party Android app widgets
+        val isIdLang = LocalAppLanguage.current == AppLanguage.ID
+        val activeWidgetPageIdx = if (pagerState.currentPage < homePageIndex) {
+            (homePageIndex - 1 - pagerState.currentPage).coerceIn(0, widgetPageCount - 1)
+        } else {
+            0
+        }
+        fun placeNewWidget(
+            colSpan: Int,
+            rowSpan: Int,
+            buildItem: (targetPage: Int, col: Int, row: Int, w: Int, h: Int) -> PlacedWidgetItem
+        ): Boolean {
+            val safeW = colSpan.coerceIn(1, widgetGridCols)
+            val safeH = rowSpan.coerceIn(1, widgetGridRows)
+            val slotOnCurrent = findFirstFreeSlot(
+                items = widgetWorkspace.items,
+                pageIndex = activeWidgetPageIdx,
+                colSpan = safeW,
+                rowSpan = safeH,
+                gridCols = widgetGridCols,
+                gridRows = widgetGridRows
+            )
+            if (slotOnCurrent != null) {
+                repository.addWidgetItem(
+                    buildItem(activeWidgetPageIdx, slotOnCurrent.first, slotOnCurrent.second, safeW, safeH)
+                )
+                return true
+            }
+            if (widgetPageCount < MAX_WIDGET_PAGES) {
+                val newPage = repository.addWidgetPage()
+                repository.addWidgetItem(buildItem(newPage, 0, 0, safeW, safeH))
+                pendingTargetWidgetPage = newPage
+                return true
+            }
+            pinFeedback = if (isIdLang) {
+                "Grid widget penuh — hapus widget atau geser ukuran dulu"
+            } else {
+                "Widget grid is full — remove or resize a widget first"
+            }
+            return false
+        }
+
+        WidgetPickerOverlay(
+            visible = showWidgetPicker,
+            gridCols = widgetGridCols,
+            appWidgetController = appWidgetController,
+            onAddBuiltInWidget = { type ->
+                val defaultW = if (type == BuiltInWidgetType.WEATHER || type == BuiltInWidgetType.VEHICLE) {
+                    (widgetGridCols - 2).coerceAtLeast(2)
+                } else {
+                    type.defaultColSpan
+                }
+                val added = placeNewWidget(defaultW, type.defaultRowSpan) { pageIdx, col, row, w, h ->
+                    PlacedWidgetItem(
+                        id = "builtin_${type.name.lowercase()}_${System.currentTimeMillis()}",
+                        pageIndex = pageIdx,
+                        kind = WidgetItemKind.BUILT_IN,
+                        builtInType = type,
+                        col = col,
+                        row = row,
+                        colSpan = w,
+                        rowSpan = h
+                    )
+                }
+                showWidgetPicker = false
+                if (added) isWidgetEditMode = true
+            },
+            onSelectAppWidget = { avail ->
+                showWidgetPicker = false
+                appWidgetController.requestAddAppWidget(
+                    providerInfo = avail.providerInfo,
+                    defaultSpan = avail.defaultColSpan to avail.defaultRowSpan
+                ) { widgetId, info, span ->
+                    val added = placeNewWidget(span.first, span.second) { pageIdx, col, row, w, h ->
+                        PlacedWidgetItem(
+                            id = "appwidget_${widgetId}_${System.currentTimeMillis()}",
+                            pageIndex = pageIdx,
+                            kind = WidgetItemKind.APP_WIDGET,
+                            appWidgetId = widgetId,
+                            providerComponent = info.provider.flattenToShortString(),
+                            col = col,
+                            row = row,
+                            colSpan = w,
+                            rowSpan = h
+                        )
+                    }
+                    if (!added) {
+                        appWidgetController.deleteWidgetId(widgetId)
+                    } else {
+                        isWidgetEditMode = true
+                    }
+                }
+            },
+            onResetDefaultLayout = {
+                val oldIds = repository.resetWidgetWorkspace(widgetGridCols)
+                oldIds.forEach { appWidgetController.deleteWidgetId(it) }
+                pendingTargetWidgetPage = 0
+                showWidgetPicker = false
+                isWidgetEditMode = false
+            },
+            onDismiss = { showWidgetPicker = false }
+        )
 
         // Slide-up live Background Preset Picker over the App List page
         AppDrawerBackgroundPickerOverlay(
@@ -609,8 +799,8 @@ fun RioSenseDashboardScreen(
                     onOpenBackgroundPicker = {
                         showControlsDrawer = false
                         showSimulatorDrawer = false
-                        if (pagerState.currentPage < LAUNCHER_PAGE_APPS) {
-                            scope.launch { pagerState.animateScrollToPage(LAUNCHER_PAGE_APPS) }
+                        if (pagerState.currentPage < appsStartPageIndex) {
+                            scope.launch { pagerState.animateScrollToPage(appsStartPageIndex) }
                         }
                         showBackgroundPicker = true
                     },

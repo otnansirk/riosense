@@ -5,12 +5,15 @@ import android.content.SharedPreferences
 import id.bangsadigital.riosense.launcher.InstalledAppsRepository
 import id.bangsadigital.riosense.model.AppDrawerBackground
 import id.bangsadigital.riosense.model.AppIconSize
+import id.bangsadigital.riosense.model.BuiltInWidgetType
 import id.bangsadigital.riosense.model.DockDisplayMode
 import id.bangsadigital.riosense.model.DockPosition
 import id.bangsadigital.riosense.model.KiaRioPaintColor
 import id.bangsadigital.riosense.model.LauncherSettings
+import id.bangsadigital.riosense.model.MAX_WIDGET_PAGES
 import id.bangsadigital.riosense.model.MaintenanceItem
 import id.bangsadigital.riosense.model.MaintenanceState
+import id.bangsadigital.riosense.model.PlacedWidgetItem
 import id.bangsadigital.riosense.model.ServiceRecord
 import id.bangsadigital.riosense.model.TopBarBrandLogo
 import id.bangsadigital.riosense.model.TripRecord
@@ -20,6 +23,8 @@ import id.bangsadigital.riosense.model.VehicleTelemetry
 import id.bangsadigital.riosense.model.VoiceButtonStyle
 import id.bangsadigital.riosense.model.VoiceSttMode
 import id.bangsadigital.riosense.model.WelcomeSoundMode
+import id.bangsadigital.riosense.model.WidgetItemKind
+import id.bangsadigital.riosense.model.WidgetWorkspaceState
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
 import org.json.JSONArray
 import org.json.JSONObject
@@ -69,6 +74,7 @@ class RioSensePreferences(context: Context) {
         private const val KEY_LAUNCHER_DOCK_PINNED_INIT = "launcher_dock_pinned_init_v1"
         private const val KEY_LAUNCHER_APP_ICON_SIZE = "launcher_app_icon_size"
         private const val KEY_LAUNCHER_APP_DRAWER_BG = "launcher_app_drawer_bg"
+        private const val KEY_WIDGET_WORKSPACE_JSON = "widget_workspace_json"
     }
 
     private val appContext = context.applicationContext
@@ -501,5 +507,71 @@ class RioSensePreferences(context: Context) {
             .putString(KEY_LAUNCHER_APP_DRAWER_BG, settings.appDrawerBackground.name)
             .putBoolean(KEY_LAUNCHER_DOCK_PINNED_INIT, true)
             .apply()
+    }
+
+    fun loadWidgetWorkspace(): WidgetWorkspaceState? {
+        val raw = prefs.getString(KEY_WIDGET_WORKSPACE_JSON, null) ?: return null
+        return runCatching {
+            val root = JSONObject(raw)
+            val pageCount = root.optInt("pageCount", 1).coerceIn(1, MAX_WIDGET_PAGES)
+            val arr = root.optJSONArray("items") ?: JSONArray()
+            val items = buildList {
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val id = obj.optString("id", "").trim()
+                    if (id.isEmpty()) continue
+                    val kind = runCatching {
+                        WidgetItemKind.valueOf(obj.optString("kind", WidgetItemKind.BUILT_IN.name))
+                    }.getOrDefault(WidgetItemKind.BUILT_IN)
+                    val builtIn = obj.optString("builtInType", "").takeIf { it.isNotBlank() }?.let { name ->
+                        runCatching { BuiltInWidgetType.valueOf(name) }.getOrNull()
+                    }
+                    if (kind == WidgetItemKind.BUILT_IN && builtIn == null) continue
+                    val appWidgetId = obj.optInt("appWidgetId", -1)
+                    if (kind == WidgetItemKind.APP_WIDGET && appWidgetId <= 0) continue
+
+                    add(
+                        PlacedWidgetItem(
+                            id = id,
+                            pageIndex = obj.optInt("pageIndex", 0).coerceIn(0, pageCount - 1),
+                            kind = kind,
+                            builtInType = builtIn,
+                            appWidgetId = appWidgetId,
+                            providerComponent = obj.optString("providerComponent", "").takeIf { it.isNotBlank() },
+                            col = obj.optInt("col", 0).coerceAtLeast(0),
+                            row = obj.optInt("row", 0).coerceAtLeast(0),
+                            colSpan = obj.optInt("colSpan", 2).coerceAtLeast(1),
+                            rowSpan = obj.optInt("rowSpan", 2).coerceAtLeast(1)
+                        )
+                    )
+                }
+            }
+            WidgetWorkspaceState(pageCount = pageCount, items = items)
+        }.getOrNull()
+    }
+
+    fun saveWidgetWorkspace(state: WidgetWorkspaceState) {
+        val root = JSONObject().apply {
+            put("pageCount", state.pageCount.coerceIn(1, MAX_WIDGET_PAGES))
+            val arr = JSONArray()
+            state.items.forEach { item ->
+                arr.put(
+                    JSONObject().apply {
+                        put("id", item.id)
+                        put("pageIndex", item.pageIndex)
+                        put("kind", item.kind.name)
+                        if (item.builtInType != null) put("builtInType", item.builtInType.name)
+                        put("appWidgetId", item.appWidgetId)
+                        if (item.providerComponent != null) put("providerComponent", item.providerComponent)
+                        put("col", item.col)
+                        put("row", item.row)
+                        put("colSpan", item.colSpan)
+                        put("rowSpan", item.rowSpan)
+                    }
+                )
+            }
+            put("items", arr)
+        }
+        prefs.edit().putString(KEY_WIDGET_WORKSPACE_JSON, root.toString()).apply()
     }
 }

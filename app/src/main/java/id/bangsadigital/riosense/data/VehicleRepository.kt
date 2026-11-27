@@ -10,6 +10,7 @@ import id.bangsadigital.riosense.model.DoorState
 import id.bangsadigital.riosense.model.KiaRioPaintColor
 import id.bangsadigital.riosense.model.LauncherSettings
 import id.bangsadigital.riosense.model.LightState
+import id.bangsadigital.riosense.model.MAX_WIDGET_PAGES
 import id.bangsadigital.riosense.model.MaintenanceItem
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.ServiceRecord
@@ -17,6 +18,7 @@ import id.bangsadigital.riosense.model.ObdActivityEntry
 import id.bangsadigital.riosense.model.ObdDirection
 import id.bangsadigital.riosense.model.ObdErrorEntry
 import id.bangsadigital.riosense.model.ObdErrorSeverity
+import id.bangsadigital.riosense.model.PlacedWidgetItem
 import id.bangsadigital.riosense.model.TireInfo
 import id.bangsadigital.riosense.model.TpmsState
 import id.bangsadigital.riosense.model.TripRecord
@@ -26,6 +28,8 @@ import id.bangsadigital.riosense.model.VehicleTelemetry
 import id.bangsadigital.riosense.model.VoiceButtonStyle
 import id.bangsadigital.riosense.model.VoiceSttMode
 import id.bangsadigital.riosense.model.WelcomeSoundMode
+import id.bangsadigital.riosense.model.WidgetWorkspaceState
+import id.bangsadigital.riosense.model.defaultWidgetWorkspace
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -116,6 +120,13 @@ class VehicleRepository(context: Context? = null) {
         prefs?.loadLauncherSettings() ?: LauncherSettings()
     )
     val launcherSettings: StateFlow<LauncherSettings> = _launcherSettings.asStateFlow()
+
+    private val initialPersistedWorkspace = prefs?.loadWidgetWorkspace()
+    private var widgetWorkspaceInitialized = initialPersistedWorkspace != null
+    private val _widgetWorkspace = MutableStateFlow(
+        initialPersistedWorkspace ?: defaultWidgetWorkspace(6)
+    )
+    val widgetWorkspace: StateFlow<WidgetWorkspaceState> = _widgetWorkspace.asStateFlow()
 
     private var simGpsStep = 0
 
@@ -1550,5 +1561,100 @@ class VehicleRepository(context: Context? = null) {
             current.copy(pinnedPackages = updated)
         }
         return isNowPinned
+    }
+
+    private fun updateWidgetWorkspace(transform: (WidgetWorkspaceState) -> WidgetWorkspaceState) {
+        _widgetWorkspace.update { current ->
+            val next = transform(current)
+            prefs?.saveWidgetWorkspace(next)
+            next
+        }
+    }
+
+    fun ensureWidgetWorkspaceInitialized(gridCols: Int) {
+        if (widgetWorkspaceInitialized) return
+        widgetWorkspaceInitialized = true
+        updateWidgetWorkspace { defaultWidgetWorkspace(gridCols) }
+    }
+
+    fun addWidgetItem(item: PlacedWidgetItem) {
+        updateWidgetWorkspace { current ->
+            val neededPages = maxOf(current.pageCount, item.pageIndex + 1).coerceIn(1, MAX_WIDGET_PAGES)
+            current.copy(
+                pageCount = neededPages,
+                items = current.items + item
+            )
+        }
+    }
+
+    fun updateWidgetPlacement(id: String, col: Int, row: Int, colSpan: Int, rowSpan: Int) {
+        updateWidgetWorkspace { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == id) {
+                        item.copy(col = col, row = row, colSpan = colSpan, rowSpan = rowSpan)
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
+    fun replaceWidgetPageItems(pageIndex: Int, updatedPageItems: List<PlacedWidgetItem>) {
+        updateWidgetWorkspace { current ->
+            val otherItems = current.items.filter { it.pageIndex != pageIndex }
+            val normalizedPageItems = updatedPageItems.map { it.copy(pageIndex = pageIndex) }
+            current.copy(items = otherItems + normalizedPageItems)
+        }
+    }
+
+    fun removeWidgetItem(id: String): PlacedWidgetItem? {
+        var removed: PlacedWidgetItem? = null
+        updateWidgetWorkspace { current ->
+            removed = current.items.firstOrNull { it.id == id }
+            current.copy(items = current.items.filterNot { it.id == id })
+        }
+        return removed
+    }
+
+    fun addWidgetPage(): Int {
+        var createdPage = 0
+        updateWidgetWorkspace { current ->
+            val nextCount = (current.pageCount + 1).coerceAtMost(MAX_WIDGET_PAGES)
+            createdPage = nextCount - 1
+            current.copy(pageCount = nextCount)
+        }
+        return createdPage
+    }
+
+    fun removeWidgetPage(pageIndex: Int): List<Int> {
+        val removedAppWidgetIds = mutableListOf<Int>()
+        updateWidgetWorkspace { current ->
+            if (current.pageCount <= 1) return@updateWidgetWorkspace current
+            val nextItems = current.items.mapNotNull { item ->
+                when {
+                    item.pageIndex == pageIndex -> {
+                        if (item.appWidgetId > 0) removedAppWidgetIds.add(item.appWidgetId)
+                        null
+                    }
+                    item.pageIndex > pageIndex -> item.copy(pageIndex = item.pageIndex - 1)
+                    else -> item
+                }
+            }
+            current.copy(
+                pageCount = (current.pageCount - 1).coerceAtLeast(1),
+                items = nextItems
+            )
+        }
+        return removedAppWidgetIds
+    }
+
+    fun resetWidgetWorkspace(gridCols: Int): List<Int> {
+        val oldAppWidgetIds = _widgetWorkspace.value.items
+            .mapNotNull { it.appWidgetId.takeIf { id -> id > 0 } }
+        widgetWorkspaceInitialized = true
+        updateWidgetWorkspace { defaultWidgetWorkspace(gridCols) }
+        return oldAppWidgetIds
     }
 }

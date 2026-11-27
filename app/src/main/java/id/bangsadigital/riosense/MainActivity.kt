@@ -31,6 +31,7 @@ import id.bangsadigital.riosense.data.VehicleRepository
 import id.bangsadigital.riosense.launcher.GlobalDockOverlayService
 import id.bangsadigital.riosense.launcher.InstalledAppsRepository
 import id.bangsadigital.riosense.launcher.MediaSessionBridge
+import id.bangsadigital.riosense.launcher.RioSenseAppWidgetController
 import id.bangsadigital.riosense.ui.RioSenseDashboardScreen
 import id.bangsadigital.riosense.ui.components.ControlsTab
 import id.bangsadigital.riosense.ui.i18n.AppLanguage
@@ -60,6 +61,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var voiceCommandController: VoiceCommandController
     private lateinit var semanticNluEngine: SemanticNluEngine
     private lateinit var tripGpsTracker: TripGpsTracker
+    private lateinit var appWidgetController: RioSenseAppWidgetController
 
     private var voiceNavState by mutableStateOf<VoiceDashboardNavigation?>(null)
     private var requestedLauncherPage by mutableStateOf<Pair<Int, Long>?>(null)
@@ -105,6 +107,7 @@ class MainActivity : ComponentActivity() {
         tripGpsTracker = TripGpsTracker(applicationContext) { point ->
             vehicleRepository.recordGpsRoutePoint(point)
         }
+        appWidgetController = RioSenseAppWidgetController(this)
 
         // Keep the Head Unit screen awake while the ignition/app is active
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -208,6 +211,7 @@ class MainActivity : ComponentActivity() {
                         repository = vehicleRepository,
                         voiceUiState = voiceUiState,
                         voiceNavigation = voiceNavState,
+                        appWidgetController = appWidgetController,
                         requestedLauncherPage = requestedLauncherPage,
                         hasOverlayPermission = hasOverlayPermission,
                         onRequestOverlayPermission = {
@@ -245,8 +249,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        appWidgetController.startListening()
+    }
+
     override fun onStop() {
         super.onStop()
+        appWidgetController.stopListening()
         if (!voiceCommandController.uiState.value.isListening) {
             semanticNluEngine.unloadAsync(lifecycleScope, reason = "activity stopped")
         }
