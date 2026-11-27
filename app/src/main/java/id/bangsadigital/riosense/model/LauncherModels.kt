@@ -37,14 +37,19 @@ enum class AppIconSize(
 }
 
 /**
- * Procedural monochrome luxury background presets for the App Drawer (image-ready architecture).
+ * Procedural monochrome and soft-tinted luxury background presets for the App Drawer.
  */
 enum class AppDrawerBackground {
     OBSIDIAN_PURE,
     CARBON_WEAVE,
     BRUSHED_TITANIUM,
     TOPO_CONTOUR,
-    MONOLITH_GRID
+    MONOLITH_GRID,
+    CHAMPAGNE_GOLD,
+    ESPRESSO_BRONZE,
+    VELVET_MAROON,
+    MIDNIGHT_SAPPHIRE,
+    EMERALD_NOIR
 }
 
 /**

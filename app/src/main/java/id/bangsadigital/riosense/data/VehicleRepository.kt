@@ -121,7 +121,7 @@ class VehicleRepository(context: Context? = null) {
     )
     val launcherSettings: StateFlow<LauncherSettings> = _launcherSettings.asStateFlow()
 
-    private val initialPersistedWorkspace = prefs?.loadWidgetWorkspace()
+    private val initialPersistedWorkspace = prefs?.loadWidgetWorkspace()?.let { compactWidgetWorkspace(it) }
     private var widgetWorkspaceInitialized = initialPersistedWorkspace != null
     private val _widgetWorkspace = MutableStateFlow(
         initialPersistedWorkspace ?: defaultWidgetWorkspace(6)
@@ -1601,11 +1601,27 @@ class VehicleRepository(context: Context? = null) {
         }
     }
 
+    private fun compactWidgetWorkspace(state: WidgetWorkspaceState): WidgetWorkspaceState {
+        if (state.items.isEmpty()) {
+            return state.copy(pageCount = 1)
+        }
+        val occupiedPages = state.items.map { it.pageIndex }.distinct().sorted()
+        val remap = occupiedPages.withIndex().associate { (newIdx, oldIdx) -> oldIdx to newIdx }
+        val remappedItems = state.items.map { item ->
+            val nextPage = remap[item.pageIndex] ?: 0
+            if (nextPage == item.pageIndex) item else item.copy(pageIndex = nextPage)
+        }
+        return state.copy(
+            pageCount = occupiedPages.size.coerceIn(1, MAX_WIDGET_PAGES),
+            items = remappedItems
+        )
+    }
+
     fun replaceWidgetPageItems(pageIndex: Int, updatedPageItems: List<PlacedWidgetItem>) {
         updateWidgetWorkspace { current ->
             val otherItems = current.items.filter { it.pageIndex != pageIndex }
             val normalizedPageItems = updatedPageItems.map { it.copy(pageIndex = pageIndex) }
-            current.copy(items = otherItems + normalizedPageItems)
+            compactWidgetWorkspace(current.copy(items = otherItems + normalizedPageItems))
         }
     }
 
@@ -1613,7 +1629,7 @@ class VehicleRepository(context: Context? = null) {
         var removed: PlacedWidgetItem? = null
         updateWidgetWorkspace { current ->
             removed = current.items.firstOrNull { it.id == id }
-            current.copy(items = current.items.filterNot { it.id == id })
+            compactWidgetWorkspace(current.copy(items = current.items.filterNot { it.id == id }))
         }
         return removed
     }
@@ -1626,28 +1642,6 @@ class VehicleRepository(context: Context? = null) {
             current.copy(pageCount = nextCount)
         }
         return createdPage
-    }
-
-    fun removeWidgetPage(pageIndex: Int): List<Int> {
-        val removedAppWidgetIds = mutableListOf<Int>()
-        updateWidgetWorkspace { current ->
-            if (current.pageCount <= 1) return@updateWidgetWorkspace current
-            val nextItems = current.items.mapNotNull { item ->
-                when {
-                    item.pageIndex == pageIndex -> {
-                        if (item.appWidgetId > 0) removedAppWidgetIds.add(item.appWidgetId)
-                        null
-                    }
-                    item.pageIndex > pageIndex -> item.copy(pageIndex = item.pageIndex - 1)
-                    else -> item
-                }
-            }
-            current.copy(
-                pageCount = (current.pageCount - 1).coerceAtLeast(1),
-                items = nextItems
-            )
-        }
-        return removedAppWidgetIds
     }
 
     fun resetWidgetWorkspace(gridCols: Int): List<Int> {

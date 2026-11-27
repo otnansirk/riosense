@@ -112,6 +112,7 @@ import id.bangsadigital.riosense.ui.components.KiaRioInteractiveStage
 import id.bangsadigital.riosense.ui.components.LauncherAppDrawerHeader
 import id.bangsadigital.riosense.ui.components.LauncherAppDrawerPage
 import id.bangsadigital.riosense.ui.components.LeftSpeedAndSecurityPanel
+import id.bangsadigital.riosense.ui.components.LiquidMagneticPageIndicator
 import id.bangsadigital.riosense.ui.components.MinimizedFloatingPillView
 import id.bangsadigital.riosense.ui.components.RightEngineTelemetryPanel
 import id.bangsadigital.riosense.ui.components.SimulatorAndSettingsSheet
@@ -343,25 +344,18 @@ fun RioSenseDashboardScreen(
                         appWidgetController = appWidgetController,
                         onToggleEditMode = { isWidgetEditMode = it },
                         onOpenWidgetPicker = { showWidgetPicker = true },
-                        onAddPage = {
-                            if (widgetPageCount < MAX_WIDGET_PAGES) {
-                                val created = repository.addWidgetPage()
-                                pendingTargetWidgetPage = created
-                                isWidgetEditMode = true
-                            }
-                        },
-                        onRemovePage = {
-                            val removedIds = repository.removeWidgetPage(widgetPageIdx)
-                            removedIds.forEach { appWidgetController.deleteWidgetId(it) }
-                            pendingTargetWidgetPage = (widgetPageIdx - 1).coerceAtLeast(0)
-                        },
                         onCommitPageLayout = { updatedItems ->
                             repository.replaceWidgetPageItems(widgetPageIdx, updatedItems)
                         },
                         onRemoveItem = { id ->
+                            val hadMultiplePages = widgetPageCount > 1
+                            val remainingOnThisPage = pageItems.count { it.id != id }
                             val removed = repository.removeWidgetItem(id)
                             if (removed != null && removed.appWidgetId > 0) {
                                 appWidgetController.deleteWidgetId(removed.appWidgetId)
+                            }
+                            if (hadMultiplePages && remainingOnThisPage == 0) {
+                                pendingTargetWidgetPage = widgetPageIdx.coerceAtMost((widgetPageCount - 2).coerceAtLeast(0))
                             }
                         },
                         onOpenControlsTab = { tab ->
@@ -494,7 +488,8 @@ fun RioSenseDashboardScreen(
                             } else {
                                 s.unpinnedFromDockFeedback(app.label)
                             }
-                        }
+                        },
+                        onOpenBackgroundPicker = { showBackgroundPicker = true }
                     )
                 }
             }
@@ -533,29 +528,16 @@ fun RioSenseDashboardScreen(
             launcherSettings.dockDisplayMode == DockDisplayMode.ALWAYS_VISIBLE &&
             launcherSettings.dockPosition == DockPosition.BOTTOM
         val indicatorBottomPadding = if (alwaysVisibleBottomDock) 64.dp else 6.dp
-        Row(
+        LiquidMagneticPageIndicator(
+            totalPages = totalPages,
+            currentPagePosition = absolutePage,
+            onSelectPage = { pageIndex ->
+                scope.launch { pagerState.animateScrollToPage(pageIndex) }
+            },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = indicatorBottomPadding),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            (0 until totalPages).forEach { pageIndex ->
-                val active = pagerState.currentPage == pageIndex
-                Box(
-                    modifier = Modifier
-                        .size(width = if (active) 16.dp else 6.dp, height = 5.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (active) ObsidianColors.PureSilver
-                            else ObsidianColors.DimSilver.copy(alpha = 0.65f)
-                        )
-                        .clickable {
-                            scope.launch { pagerState.animateScrollToPage(pageIndex) }
-                        }
-                )
-            }
-        }
+                .padding(bottom = indicatorBottomPadding)
+        )
 
         // In-app Obsidian Dock fallback when global overlay permission is not granted yet
         if (launcherSettings.dockEnabled && !hasOverlayPermission && !showBackgroundPicker) {
@@ -598,6 +580,25 @@ fun RioSenseDashboardScreen(
                     buildItem(activeWidgetPageIdx, slotOnCurrent.first, slotOnCurrent.second, safeW, safeH)
                 )
                 return true
+            }
+            for (p in 0 until widgetPageCount) {
+                if (p == activeWidgetPageIdx) continue
+                val freeOnOther = findFirstFreeSlot(
+                    items = widgetWorkspace.items,
+                    pageIndex = p,
+                    colSpan = safeW,
+                    rowSpan = safeH,
+                    gridCols = widgetGridCols,
+                    gridRows = widgetGridRows
+                )
+                if (freeOnOther != null) {
+                    repository.addWidgetItem(
+                        buildItem(p, freeOnOther.first, freeOnOther.second, safeW, safeH)
+                    )
+                    val targetPagerIndex = (homePageIndex - 1 - p).coerceIn(0, (homePageIndex - 1).coerceAtLeast(0))
+                    scope.launch { pagerState.animateScrollToPage(targetPagerIndex) }
+                    return true
+                }
             }
             if (widgetPageCount < MAX_WIDGET_PAGES) {
                 val newPage = repository.addWidgetPage()
@@ -663,13 +664,6 @@ fun RioSenseDashboardScreen(
                         isWidgetEditMode = true
                     }
                 }
-            },
-            onResetDefaultLayout = {
-                val oldIds = repository.resetWidgetWorkspace(widgetGridCols)
-                oldIds.forEach { appWidgetController.deleteWidgetId(it) }
-                pendingTargetWidgetPage = 0
-                showWidgetPicker = false
-                isWidgetEditMode = false
             },
             onDismiss = { showWidgetPicker = false }
         )

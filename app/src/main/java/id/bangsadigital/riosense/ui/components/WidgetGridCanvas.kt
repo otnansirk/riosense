@@ -6,7 +6,7 @@ import android.os.SystemClock
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.EaseInOutSine
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -21,6 +21,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -32,7 +33,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -40,9 +45,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -78,6 +86,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -94,9 +103,9 @@ import androidx.core.graphics.drawable.toBitmap
 import id.bangsadigital.riosense.launcher.AvailableAppWidget
 import id.bangsadigital.riosense.launcher.MediaSessionBridge
 import id.bangsadigital.riosense.launcher.RioSenseAppWidgetController
+import id.bangsadigital.riosense.launcher.WeatherCondition
 import id.bangsadigital.riosense.launcher.WeatherRepository
 import id.bangsadigital.riosense.model.BuiltInWidgetType
-import id.bangsadigital.riosense.model.MAX_WIDGET_PAGES
 import id.bangsadigital.riosense.model.MaintenanceState
 import id.bangsadigital.riosense.model.PlacedWidgetItem
 import id.bangsadigital.riosense.model.VehicleTelemetry
@@ -154,8 +163,6 @@ fun CustomizableWidgetGridPage(
     appWidgetController: RioSenseAppWidgetController,
     onToggleEditMode: (Boolean) -> Unit,
     onOpenWidgetPicker: () -> Unit,
-    onAddPage: () -> Unit,
-    onRemovePage: () -> Unit,
     onCommitPageLayout: (List<PlacedWidgetItem>) -> Unit,
     onRemoveItem: (id: String) -> Unit,
     onOpenControlsTab: (ControlsTab) -> Unit,
@@ -251,14 +258,14 @@ fun CustomizableWidgetGridPage(
         }
     }
 
-    // Shared jiggle clock running only while in Edit Mode on the visible page
+    // Smooth sinusoidal pendulum jiggle running only while in Edit Mode on the visible page
     val jiggleAngle = if (isEditMode && isPageVisible) {
         val transition = rememberInfiniteTransition(label = "widgetJiggle")
         val angle by transition.animateFloat(
-            initialValue = -0.85f,
-            targetValue = 0.85f,
+            initialValue = -0.65f,
+            targetValue = 0.65f,
             animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 155, easing = LinearEasing),
+                animation = tween(durationMillis = 320, easing = EaseInOutSine),
                 repeatMode = RepeatMode.Reverse
             ),
             label = "widgetJiggleAngle"
@@ -340,22 +347,6 @@ fun CustomizableWidgetGridPage(
                         textColor = ObsidianColors.PureSilver,
                         onClick = onOpenWidgetPicker
                     )
-                    if (totalWidgetPages < MAX_WIDGET_PAGES) {
-                        HeaderActionPill(
-                            label = if (isId) "+ Halaman" else "+ Page",
-                            bgColor = Color(0xFF191D26),
-                            textColor = ObsidianColors.MutedSilver,
-                            onClick = onAddPage
-                        )
-                    }
-                    if (totalWidgetPages > 1) {
-                        HeaderActionPill(
-                            label = if (isId) "Hapus Hal" else "Delete Page",
-                            bgColor = Color(0xFF191D26),
-                            textColor = ObsidianColors.MutedSilver,
-                            onClick = onRemovePage
-                        )
-                    }
                     HeaderActionPill(
                         label = if (isId) "Selesai" else "Done",
                         bgColor = Color(0xFF252B38),
@@ -445,22 +436,26 @@ fun CustomizableWidgetGridPage(
                 }
             }
 
-            // Subtle frosted obsidian snap landing shadow while dragging or resizing
-            previewRect?.let { rect ->
-                val pLeft = rect.col * stepX
-                val pTop = rect.row * stepY
-                val pWidth = rect.colSpan * cellW + (rect.colSpan - 1) * gapPx
-                val pHeight = rect.rowSpan * cellH + (rect.rowSpan - 1) * gapPx
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(pLeft.roundToInt(), pTop.roundToInt()) }
-                        .size(
-                            width = with(density) { pWidth.toDp() },
-                            height = with(density) { pHeight.toDp() }
-                        )
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(Color(0x1CFFFFFF))
-                )
+            // Subtle shadow-only landing footprint while dragging (not shown during resize)
+            if (activeDragId != null) {
+                previewRect?.let { rect ->
+                    val pLeft = rect.col * stepX
+                    val pTop = rect.row * stepY
+                    val pWidth = rect.colSpan * cellW + (rect.colSpan - 1) * gapPx
+                    val pHeight = rect.rowSpan * cellH + (rect.rowSpan - 1) * gapPx
+                    val shape = RoundedCornerShape(22.dp)
+                    Box(
+                        modifier = Modifier
+                            .offset { IntOffset(pLeft.roundToInt(), pTop.roundToInt()) }
+                            .size(
+                                width = with(density) { pWidth.toDp() },
+                                height = with(density) { pHeight.toDp() }
+                            )
+                            .shadow(18.dp, shape, ambientColor = Color.Black, spotColor = Color.Black)
+                            .clip(shape)
+                            .background(Color(0x8C0A0C10))
+                    )
+                }
             }
 
             val latestLiveItems by rememberUpdatedState(livePageItems)
@@ -533,7 +528,7 @@ fun CustomizableWidgetGridPage(
                                 rotationZ = widgetRotation
                                 scaleX = widgetScale
                                 scaleY = widgetScale
-                                alpha = widgetAlpha
+                                clip = false
                             }
                             .then(
                                 if (!isEditMode) {
@@ -569,67 +564,87 @@ fun CustomizableWidgetGridPage(
                                 }
                             )
                     ) {
-                        when (item.kind) {
-                            WidgetItemKind.BUILT_IN -> {
-                                when (item.builtInType) {
-                                    BuiltInWidgetType.CLOCK -> {
-                                        RioSenseClockWidgetCard(
-                                            timeStr = timeStr,
-                                            dateStr = dateStr,
-                                            modifier = Modifier.fillMaxSize()
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(
+                                    if (isResizingThis || isDraggingThis) {
+                                        Modifier.shadow(
+                                            elevation = 26.dp,
+                                            shape = RoundedCornerShape(22.dp),
+                                            ambientColor = Color.Black,
+                                            spotColor = Color.Black
                                         )
+                                    } else {
+                                        Modifier
                                     }
-
-                                    BuiltInWidgetType.MUSIC -> {
-                                        RioSenseMusicWidgetCard(
-                                            nowPlaying = nowPlaying,
-                                            isAudioActive = isAudioActive,
-                                            isPageVisible = isPageVisible,
-                                            trackProgress = trackProgress,
-                                            isId = isId,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-
-                                    BuiltInWidgetType.WEATHER -> {
-                                        RioSenseWeatherWidgetCard(
-                                            weather = weather,
-                                            isId = isId,
-                                            onRefresh = {
-                                                if (!isEditMode) {
-                                                    scope.launch { WeatherRepository.refreshIfStale(context, force = true) }
-                                                }
-                                            },
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-
-                                    BuiltInWidgetType.VEHICLE -> {
-                                        RioSenseVehicleWidgetCard(
-                                            telemetry = telemetry,
-                                            dueCount = dueCount,
-                                            odoText = odoText,
-                                            s = s,
-                                            onOpenControlsTab = { tab ->
-                                                if (!isEditMode) onOpenControlsTab(tab)
-                                            },
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-
-                                    null -> Unit
-                                }
-                            }
-
-                            WidgetItemKind.APP_WIDGET -> {
-                                ExternalAppWidgetCard(
-                                    appWidgetId = item.appWidgetId,
-                                    fallbackTitle = item.providerComponent?.substringAfterLast('.') ?: "Widget",
-                                    widthDp = boxWDp.value.roundToInt(),
-                                    heightDp = boxHDp.value.roundToInt(),
-                                    appWidgetController = appWidgetController,
-                                    modifier = Modifier.fillMaxSize()
                                 )
+                                .graphicsLayer {
+                                    alpha = widgetAlpha
+                                }
+                        ) {
+                            when (item.kind) {
+                                WidgetItemKind.BUILT_IN -> {
+                                    when (item.builtInType) {
+                                        BuiltInWidgetType.CLOCK -> {
+                                            RioSenseClockWidgetCard(
+                                                timeStr = timeStr,
+                                                dateStr = dateStr,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+
+                                        BuiltInWidgetType.MUSIC -> {
+                                            RioSenseMusicWidgetCard(
+                                                nowPlaying = nowPlaying,
+                                                isAudioActive = isAudioActive,
+                                                isPageVisible = isPageVisible,
+                                                trackProgress = trackProgress,
+                                                isId = isId,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+
+                                        BuiltInWidgetType.WEATHER -> {
+                                            RioSenseWeatherWidgetCard(
+                                                weather = weather,
+                                                isId = isId,
+                                                onRefresh = {
+                                                    if (!isEditMode) {
+                                                        scope.launch { WeatherRepository.refreshIfStale(context, force = true) }
+                                                    }
+                                                },
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+
+                                        BuiltInWidgetType.VEHICLE -> {
+                                            RioSenseVehicleWidgetCard(
+                                                telemetry = telemetry,
+                                                dueCount = dueCount,
+                                                odoText = odoText,
+                                                s = s,
+                                                onOpenControlsTab = { tab ->
+                                                    if (!isEditMode) onOpenControlsTab(tab)
+                                                },
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+
+                                        null -> Unit
+                                    }
+                                }
+
+                                WidgetItemKind.APP_WIDGET -> {
+                                    ExternalAppWidgetCard(
+                                        appWidgetId = item.appWidgetId,
+                                        fallbackTitle = item.providerComponent?.substringAfterLast('.') ?: "Widget",
+                                        widthDp = boxWDp.value.roundToInt(),
+                                        heightDp = boxHDp.value.roundToInt(),
+                                        appWidgetController = appWidgetController,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
                             }
                         }
 
@@ -722,28 +737,31 @@ fun CustomizableWidgetGridPage(
                                     }
                             )
 
-                            // Iconic iPhone monochrome Obsidian `−` remove badge at Top-Left (no red, no border)
+                            // Unclipped full-circle monochrome Obsidian `−` remove button protruding cleanly outside top-left
                             if (!isDraggingThis) {
                                 Box(
                                     modifier = Modifier
                                         .align(Alignment.TopStart)
-                                        .offset(x = (-4).dp, y = (-4).dp)
-                                        .size(22.dp)
+                                        .offset(x = (-6).dp, y = (-6).dp)
+                                        .zIndex(2f)
+                                        .size(24.dp)
+                                        .aspectRatio(1f)
                                         .shadow(8.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
                                         .clip(CircleShape)
-                                        .background(Color(0xF0222733))
+                                        .background(Color(0xF51A1E28))
+                                        .border(2.dp, ObsidianColors.MutedSilver.copy(alpha = 0.78f), CircleShape)
                                         .clickable {
                                             if (selectedItemId == item.id) selectedItemId = null
                                             onRemoveItem(item.id)
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Canvas(modifier = Modifier.size(9.dp)) {
+                                    Canvas(modifier = Modifier.size(10.dp)) {
                                         drawLine(
                                             color = ObsidianColors.PureSilver,
                                             start = Offset(0f, size.height * 0.5f),
                                             end = Offset(size.width, size.height * 0.5f),
-                                            strokeWidth = 1.8.dp.toPx(),
+                                            strokeWidth = 1.7.dp.toPx(),
                                             cap = StrokeCap.Round
                                         )
                                     }
@@ -959,9 +977,9 @@ private fun BoxScope.ResizeHandlePill(
         contentAlignment = Alignment.Center
     ) {
         val pillColor = if (highlighted) {
-            ObsidianColors.PureSilver.copy(alpha = 0.72f)
+            ObsidianColors.PureSilver.copy(alpha = 0.34f)
         } else {
-            ObsidianColors.MutedSilver.copy(alpha = 0.55f)
+            ObsidianColors.MutedSilver.copy(alpha = 0.24f)
         }
         when (handle) {
             ResizeHandle.LEFT, ResizeHandle.RIGHT -> {
@@ -986,9 +1004,9 @@ private fun BoxScope.ResizeHandlePill(
                 Box(
                     modifier = Modifier
                         .size(16.dp)
-                        .shadow(6.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
+                        .shadow(4.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
                         .clip(CircleShape)
-                        .background(Color(0xEB222733)),
+                        .background(Color(0x88222733)),
                     contentAlignment = Alignment.Center
                 ) {
                     Canvas(modifier = Modifier.size(6.dp)) {
@@ -1094,7 +1112,6 @@ fun WidgetPickerOverlay(
     appWidgetController: RioSenseAppWidgetController,
     onAddBuiltInWidget: (BuiltInWidgetType) -> Unit,
     onSelectAppWidget: (AvailableAppWidget) -> Unit,
-    onResetDefaultLayout: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1155,9 +1172,10 @@ fun WidgetPickerOverlay(
             val modalShape = RoundedCornerShape(22.dp)
             Column(
                 modifier = Modifier
-                    .fillMaxWidth(0.72f)
-                    .widthIn(max = 560.dp)
-                    .heightIn(max = 420.dp)
+                    .fillMaxWidth(0.84f)
+                    .widthIn(max = 760.dp)
+                    .fillMaxHeight(0.84f)
+                    .heightIn(max = 500.dp)
                     .shadow(
                         elevation = 28.dp,
                         shape = modalShape,
@@ -1173,11 +1191,7 @@ fun WidgetPickerOverlay(
                     .padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = if (isId) "Tambah Widget" else "Add Widget",
                         color = ObsidianColors.PureSilver,
@@ -1185,23 +1199,53 @@ fun WidgetPickerOverlay(
                         fontWeight = FontWeight.SemiBold
                     )
 
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    val tabs = listOf(
+                        "Default",
+                        if (isId) "Widget Aplikasi" else "App Widgets"
+                    )
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(22.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        HeaderActionPill(
-                            label = "RioSense",
-                            bgColor = if (selectedTab == 0) Color(0xFF252B38) else Color(0xFF191D26),
-                            textColor = if (selectedTab == 0) ObsidianColors.PureSilver else ObsidianColors.MutedSilver,
-                            onClick = { selectedTab = 0 }
-                        )
-                        HeaderActionPill(
-                            label = if (isId) "Widget Aplikasi" else "App Widgets",
-                            bgColor = if (selectedTab == 1) Color(0xFF252B38) else Color(0xFF191D26),
-                            textColor = if (selectedTab == 1) ObsidianColors.PureSilver else ObsidianColors.MutedSilver,
-                            onClick = { selectedTab = 1 }
-                        )
+                        tabs.forEachIndexed { index, label ->
+                            val isSelected = selectedTab == index
+                            Column(
+                                modifier = Modifier
+                                    .width(IntrinsicSize.Max)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) { selectedTab = index },
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = if (isSelected) ObsidianColors.PureSilver else ObsidianColors.MutedSilver,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                    modifier = Modifier.padding(vertical = 6.dp)
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(2.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isSelected) ObsidianColors.PureSilver else Color.Transparent
+                                        )
+                                )
+                            }
+                        }
                     }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(0.75.dp)
+                            .background(Color(0xFF1D222D))
+                    )
                 }
 
                 if (selectedTab == 0) {
@@ -1231,56 +1275,67 @@ fun WidgetPickerOverlay(
                         )
                     }
 
-                    LazyColumn(
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f, fill = false),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         items(builtInItems, key = { it.first.name }) { (type, title, spanLabel) ->
-                            Row(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(14.dp))
-                                    .background(Color(0xFF161A23))
                                     .clickable { onAddBuiltInWidget(type) }
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(vertical = 4.dp, horizontal = 2.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(94.dp)
+                                        .shadow(
+                                            elevation = 10.dp,
+                                            shape = RoundedCornerShape(16.dp),
+                                            ambientColor = Color.Black,
+                                            spotColor = Color.Black
+                                        )
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(Color(0xFF141821)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    BuiltInWidgetMiniPreview(type)
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Text(
                                         text = title,
                                         color = ObsidianColors.PureSilver,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Medium
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
                                     )
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "RioSense Obsidian · $spanLabel",
+                                        text = spanLabel,
                                         color = ObsidianColors.DimSilver,
-                                        fontSize = 10.5.sp
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace
                                     )
                                 }
-                                Text(
-                                    text = "+",
-                                    color = ObsidianColors.PureSilver,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
                             }
                         }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        HeaderActionPill(
-                            label = if (isId) "Reset Tata Letak Default" else "Reset Default Layout",
-                            bgColor = Color(0xFF1A1E28),
-                            textColor = ObsidianColors.MutedSilver,
-                            onClick = onResetDefaultLayout
-                        )
                     }
                 } else {
                     Box(
@@ -1319,11 +1374,11 @@ fun WidgetPickerOverlay(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(140.dp),
+                                    .weight(1f),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = if (isId) "Memuat daftar widget aplikasi..." else "Loading app widgets...",
+                                    text = if (isId) "Memuat preview widget aplikasi..." else "Loading app widget previews...",
                                     color = ObsidianColors.MutedSilver,
                                     fontSize = 12.sp
                                 )
@@ -1334,7 +1389,7 @@ fun WidgetPickerOverlay(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(140.dp),
+                                    .weight(1f),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
@@ -1346,89 +1401,374 @@ fun WidgetPickerOverlay(
                         }
 
                         else -> {
-                            LazyColumn(
+                            val groupedAppWidgets = remember(filteredAppWidgets) {
+                                filteredAppWidgets.groupBy { it.appPackage }.values.toList()
+                            }
+
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = 152.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .weight(1f, fill = false),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    .weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
-                                items(
-                                    filteredAppWidgets,
-                                    key = { it.providerInfo.provider.flattenToString() }
-                                ) { widget ->
-                                    val iconBitmap by produceState<ImageBitmap?>(
-                                        initialValue = null,
-                                        widget.appPackage
+                                groupedAppWidgets.forEach { group ->
+                                    val first = group.first()
+                                    item(
+                                        key = "header_${first.appPackage}",
+                                        span = { GridItemSpan(maxLineSpan) }
                                     ) {
-                                        value = withContext(Dispatchers.IO) {
-                                            runCatching {
-                                                context.packageManager
-                                                    .getApplicationIcon(widget.appPackage)
-                                                    .toBitmap(width = 72, height = 72)
-                                                    .asImageBitmap()
-                                            }.getOrNull()
+                                        val groupIconBitmap by produceState<ImageBitmap?>(
+                                            initialValue = null,
+                                            first.appPackage
+                                        ) {
+                                            value = withContext(Dispatchers.IO) {
+                                                runCatching {
+                                                    context.packageManager
+                                                        .getApplicationIcon(first.appPackage)
+                                                        .toBitmap(width = 48, height = 48)
+                                                        .asImageBitmap()
+                                                }.getOrNull()
+                                            }
+                                        }
+
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 6.dp, bottom = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            val hdrIcon = groupIconBitmap
+                                            if (hdrIcon != null) {
+                                                Image(
+                                                    bitmap = hdrIcon,
+                                                    contentDescription = first.appLabel,
+                                                    modifier = Modifier
+                                                        .size(18.dp)
+                                                        .clip(RoundedCornerShape(4.dp))
+                                                )
+                                            }
+                                            Text(
+                                                text = first.appLabel,
+                                                color = ObsidianColors.PureSilver,
+                                                fontSize = 12.5.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "${group.size}",
+                                                color = ObsidianColors.DimSilver,
+                                                fontSize = 10.5.sp,
+                                                fontFamily = FontFamily.Monospace
+                                            )
                                         }
                                     }
 
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(14.dp))
-                                            .background(Color(0xFF161A23))
-                                            .clickable { onSelectAppWidget(widget) }
-                                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(34.dp)
-                                                .clip(RoundedCornerShape(9.dp))
-                                                .background(Color(0xFF202633)),
-                                            contentAlignment = Alignment.Center
+                                    items(
+                                        group,
+                                        key = { it.providerInfo.provider.flattenToString() }
+                                    ) { widget ->
+                                        val previewBitmap by produceState<ImageBitmap?>(
+                                            initialValue = null,
+                                            widget.providerInfo.provider
                                         ) {
-                                            val bmp = iconBitmap
-                                            if (bmp != null) {
-                                                Image(
-                                                    bitmap = bmp,
-                                                    contentDescription = widget.appLabel,
-                                                    modifier = Modifier.size(26.dp)
-                                                )
+                                            value = appWidgetController
+                                                .loadWidgetPreviewBitmap(context, widget.providerInfo)
+                                                ?.asImageBitmap()
+                                        }
+
+                                        val iconBitmap by produceState<ImageBitmap?>(
+                                            initialValue = null,
+                                            widget.appPackage
+                                        ) {
+                                            value = withContext(Dispatchers.IO) {
+                                                runCatching {
+                                                    context.packageManager
+                                                        .getApplicationIcon(widget.appPackage)
+                                                        .toBitmap(width = 64, height = 64)
+                                                        .asImageBitmap()
+                                                }.getOrNull()
                                             }
                                         }
 
                                         Column(
-                                            modifier = Modifier.weight(1f),
-                                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(14.dp))
+                                                .clickable { onSelectAppWidget(widget) }
+                                                .padding(vertical = 4.dp, horizontal = 2.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
-                                            Text(
-                                                text = widget.widgetLabel,
-                                                color = ObsidianColors.PureSilver,
-                                                fontSize = 12.5.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                text = "${widget.appLabel} · ${widget.defaultColSpan}×${widget.defaultRowSpan}",
-                                                color = ObsidianColors.DimSilver,
-                                                fontSize = 10.sp,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(92.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                val previewBmp = previewBitmap
+                                                val iconBmp = iconBitmap
+                                                if (previewBmp != null) {
+                                                    Image(
+                                                        bitmap = previewBmp,
+                                                        contentDescription = widget.widgetLabel,
+                                                        contentScale = ContentScale.Fit,
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .clip(RoundedCornerShape(12.dp))
+                                                    )
+                                                } else if (iconBmp != null) {
+                                                    Image(
+                                                        bitmap = iconBmp,
+                                                        contentDescription = widget.appLabel,
+                                                        modifier = Modifier.size(42.dp)
+                                                    )
+                                                }
+                                            }
 
-                                        Text(
-                                            text = "+",
-                                            color = ObsidianColors.PureSilver,
-                                            fontSize = 18.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                                            ) {
+                                                Text(
+                                                    text = widget.widgetLabel,
+                                                    color = ObsidianColors.PureSilver,
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = "${widget.defaultColSpan}×${widget.defaultRowSpan}",
+                                                    color = ObsidianColors.DimSilver,
+                                                    fontSize = 10.sp,
+                                                    fontFamily = FontFamily.Monospace
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BuiltInWidgetMiniPreview(type: BuiltInWidgetType) {
+    when (type) {
+        BuiltInWidgetType.CLOCK -> {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                DotMatrixText(
+                    text = "07:38",
+                    dotSize = 2.6.dp,
+                    dotGap = 1.0.dp,
+                    charGap = 3.0.dp,
+                    color = ObsidianColors.PureSilver
+                )
+                Box(
+                    modifier = Modifier
+                        .size(width = 76.dp, height = 4.dp)
+                        .clip(CircleShape)
+                        .background(ObsidianColors.DimSilver.copy(alpha = 0.6f))
+                )
+            }
+        }
+
+        BuiltInWidgetType.MUSIC -> {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(Color(0xFF191D27)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.size(16.dp)) {
+                            drawCircle(
+                                color = ObsidianColors.MutedSilver.copy(alpha = 0.6f),
+                                radius = size.minDimension * 0.42f,
+                                style = Stroke(width = 1.2.dp.toPx())
+                            )
+                            drawCircle(
+                                color = ObsidianColors.PureSilver,
+                                radius = size.minDimension * 0.12f
+                            )
+                        }
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.75f)
+                                .height(4.dp)
+                                .clip(CircleShape)
+                                .background(ObsidianColors.PureSilver.copy(alpha = 0.8f))
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .clip(CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    drawCircle(
+                                        color = ObsidianColors.PureSilver.copy(alpha = 0.7f),
+                                        style = Stroke(width = 1.2.dp.toPx())
+                                    )
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 24.dp, height = 3.dp)
+                                    .clip(CircleShape)
+                                    .background(ObsidianColors.DimSilver)
+                            )
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    val heights = listOf(8, 13, 18, 11, 20, 15, 9, 17, 12, 7)
+                    heights.forEach { h ->
+                        Box(
+                            modifier = Modifier
+                                .size(width = 6.dp, height = h.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(ObsidianColors.CobaltAccent.copy(alpha = 0.75f))
+                        )
+                    }
+                }
+            }
+        }
+
+        BuiltInWidgetType.WEATHER -> {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        DotMatrixWeatherIcon(
+                            condition = WeatherCondition.PARTLY_CLOUDY,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        DotMatrixText(
+                            text = "29°",
+                            dotSize = 2.0.dp,
+                            dotGap = 0.8.dp,
+                            charGap = 2.4.dp,
+                            color = ObsidianColors.PureSilver
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(width = 36.dp, height = 4.dp)
+                            .clip(CircleShape)
+                            .background(ObsidianColors.MutedSilver.copy(alpha = 0.55f))
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val icons = listOf(
+                        WeatherCondition.SUNNY,
+                        WeatherCondition.PARTLY_CLOUDY,
+                        WeatherCondition.CLOUDY,
+                        WeatherCondition.RAIN,
+                        WeatherCondition.SUNNY
+                    )
+                    icons.forEach { cond ->
+                        DotMatrixWeatherIcon(
+                            condition = cond,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        BuiltInWidgetType.VEHICLE -> {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DotMatrixText(
+                        text = "48,250",
+                        dotSize = 1.7.dp,
+                        dotGap = 0.7.dp,
+                        charGap = 2.0.dp,
+                        color = ObsidianColors.PureSilver
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(width = 28.dp, height = 6.dp)
+                            .clip(CircleShape)
+                            .background(ObsidianColors.EmeraldNominal.copy(alpha = 0.75f))
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ServiceWrenchVectorIcon(
+                        tint = ObsidianColors.MutedSilver,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    TripRouteVectorIcon(
+                        tint = ObsidianColors.MutedSilver,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    SettingsGearVectorIcon(
+                        tint = ObsidianColors.MutedSilver,
+                        modifier = Modifier.size(13.dp)
+                    )
                 }
             }
         }

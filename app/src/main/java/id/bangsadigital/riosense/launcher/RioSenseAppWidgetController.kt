@@ -7,11 +7,19 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProviderInfo
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Build
 import android.os.Bundle
 import android.util.SizeF
+import android.view.View
+import android.widget.FrameLayout
+import android.widget.RemoteViews
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.graphics.drawable.toBitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.ceil
 
 const val RIOSENSE_APPWIDGET_HOST_ID = 0x52494F
@@ -229,5 +237,52 @@ class RioSenseAppWidgetController(private val activity: ComponentActivity) {
             ceil((info.minHeight.coerceAtLeast(60) + 16f) / 90f).toInt()
         }
         return rawCols.coerceIn(1, gridCols) to rawRows.coerceIn(1, 4)
+    }
+
+    suspend fun loadWidgetPreviewBitmap(
+        context: Context,
+        info: AppWidgetProviderInfo,
+        maxWidthPx: Int = 320,
+        maxHeightPx: Int = 200
+    ): Bitmap? {
+        val previewFromDrawable = withContext(Dispatchers.IO) {
+            runCatching {
+                val drawable = info.loadPreviewImage(appContext, 0) ?: return@runCatching null
+                val rawW = drawable.intrinsicWidth.takeIf { it > 0 } ?: maxWidthPx
+                val rawH = drawable.intrinsicHeight.takeIf { it > 0 } ?: maxHeightPx
+                val scale = minOf(1f, maxWidthPx.toFloat() / rawW, maxHeightPx.toFloat() / rawH)
+                val targetW = (rawW * scale).toInt().coerceIn(24, maxWidthPx)
+                val targetH = (rawH * scale).toInt().coerceIn(24, maxHeightPx)
+                drawable.toBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+            }.getOrNull()
+        }
+        if (previewFromDrawable != null) return previewFromDrawable
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && info.previewLayout != 0) {
+            return withContext(Dispatchers.Main) {
+                runCatching {
+                    val container = FrameLayout(context)
+                    val remoteView = RemoteViews(info.provider.packageName, info.previewLayout)
+                        .apply(context, container)
+                    val atMostW = View.MeasureSpec.makeMeasureSpec(maxWidthPx, View.MeasureSpec.AT_MOST)
+                    val atMostH = View.MeasureSpec.makeMeasureSpec(maxHeightPx, View.MeasureSpec.AT_MOST)
+                    remoteView.measure(atMostW, atMostH)
+                    if (remoteView.measuredWidth <= 0 || remoteView.measuredHeight <= 0) {
+                        remoteView.measure(
+                            View.MeasureSpec.makeMeasureSpec(maxWidthPx, View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(maxHeightPx, View.MeasureSpec.EXACTLY)
+                        )
+                    }
+                    val w = remoteView.measuredWidth.coerceIn(24, maxWidthPx)
+                    val h = remoteView.measuredHeight.coerceIn(24, maxHeightPx)
+                    remoteView.layout(0, 0, w, h)
+                    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(bmp)
+                    remoteView.draw(canvas)
+                    bmp
+                }.getOrNull()
+            }
+        }
+        return null
     }
 }

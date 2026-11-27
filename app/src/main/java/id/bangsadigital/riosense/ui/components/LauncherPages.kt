@@ -24,6 +24,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -67,6 +68,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -77,15 +79,18 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -120,6 +125,7 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.pow
 
 /**
  * Page 0 (Swipe Right from Home): Borderless Apple + Nothing OS Dot-Matrix Obsidian Bento Hub
@@ -312,7 +318,7 @@ internal fun RioSenseClockWidgetCard(
     ObsidianWidgetCard(modifier = modifier) {
         BoxWithConstraints(
             modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.CenterStart
+            contentAlignment = Alignment.Center
         ) {
             val maxDotByW = (maxWidth.value / 33f).dp
             val maxDotByH = (maxHeight.value / 15f).dp
@@ -324,7 +330,8 @@ internal fun RioSenseClockWidgetCard(
 
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 DotMatrixText(
                     text = timeStr,
@@ -367,7 +374,7 @@ internal fun RioSenseMusicWidgetCard(
 
             Column(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.SpaceBetween
+                verticalArrangement = if (showSpectrum) Arrangement.SpaceBetween else Arrangement.Center
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -658,7 +665,8 @@ internal fun RioSenseWeatherWidgetCard(
             } else {
                 Column(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.Center
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -706,9 +714,7 @@ internal fun RioSenseVehicleWidgetCard(
 
             Column(modifier = Modifier.fillMaxSize()) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 2.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -840,7 +846,7 @@ internal fun ObsidianWidgetCard(
             .then(
                 if (onClick != null) Modifier.clickable { onClick() } else Modifier
             )
-            .padding(horizontal = 18.dp, vertical = 15.dp),
+            .padding(16.dp),
         content = content
     )
 }
@@ -1082,14 +1088,25 @@ fun LauncherAppDrawerPage(
     iconSize: AppIconSize,
     pinnedPackages: List<String>,
     onTogglePinApp: (InstalledAppInfo) -> Unit,
+    onOpenBackgroundPicker: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val s = appStrings()
 
     Box(
         modifier = modifier
             .fillMaxSize()
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {},
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onOpenBackgroundPicker()
+                }
+            )
             .padding(start = 24.dp, end = 24.dp, top = 66.dp, bottom = 14.dp)
     ) {
         if (pageApps.isEmpty()) {
@@ -1142,16 +1159,7 @@ fun LauncherAppDrawerPage(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .combinedClickable(
-                                                onClick = {
-                                                    InstalledAppsRepository.launchApp(context, app.packageName)
-                                                },
-                                                onLongClick = { onTogglePinApp(app) }
-                                            )
-                                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                                        modifier = Modifier.fillMaxWidth(),
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         verticalArrangement = Arrangement.Center
                                     ) {
@@ -1159,22 +1167,32 @@ fun LauncherAppDrawerPage(
                                             modifier = Modifier.size(iconSize.iconDp.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            if (iconBitmap != null) {
-                                                Image(
-                                                    bitmap = iconBitmap!!,
-                                                    contentDescription = app.label,
-                                                    contentScale = ContentScale.Fit,
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .clip(RoundedCornerShape(11.dp))
-                                                )
-                                            } else {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .clip(RoundedCornerShape(11.dp))
-                                                        .background(ObsidianColors.ObsidianPanel)
-                                                )
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .clip(RoundedCornerShape(11.dp))
+                                                    .combinedClickable(
+                                                        onClick = {
+                                                            InstalledAppsRepository.launchApp(context, app.packageName)
+                                                        },
+                                                        onLongClick = { onTogglePinApp(app) }
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (iconBitmap != null) {
+                                                    Image(
+                                                        bitmap = iconBitmap!!,
+                                                        contentDescription = app.label,
+                                                        contentScale = ContentScale.Fit,
+                                                        modifier = Modifier.fillMaxSize()
+                                                    )
+                                                } else {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .background(ObsidianColors.ObsidianPanel)
+                                                    )
+                                                }
                                             }
 
                                             if (isPinned) {
@@ -1673,7 +1691,7 @@ fun AppDrawerBackgroundCanvas(
     isPreview: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    Canvas(modifier = modifier) {
+    Canvas(modifier = modifier.clipToBounds()) {
         val w = size.width
         val h = size.height
 
@@ -1848,6 +1866,255 @@ fun AppDrawerBackgroundCanvas(
                     strokeWidth = lineStroke
                 )
             }
+
+            AppDrawerBackground.CHAMPAGNE_GOLD -> {
+                drawRect(color = Color(0xFF0A0907))
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFFD8B580).copy(alpha = 0.26f),
+                            Color(0xFF705836).copy(alpha = 0.15f),
+                            Color.Transparent
+                        ),
+                        center = Offset(w * 0.72f, h * 0.22f),
+                        radius = maxOf(w, h) * 0.72f
+                    )
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF4A3922).copy(alpha = 0.18f),
+                            Color.Transparent
+                        ),
+                        center = Offset(w * 0.20f, h * 0.85f),
+                        radius = maxOf(w, h) * 0.58f
+                    )
+                )
+                drawRect(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color(0xFFEBD0A4).copy(alpha = 0.08f),
+                            Color(0xFFD8B580).copy(alpha = 0.12f),
+                            Color.Transparent
+                        ),
+                        start = Offset(0f, h * 0.15f),
+                        end = Offset(w, h * 0.85f)
+                    )
+                )
+                val strokeW = if (isPreview) 0.6.dp.toPx() else 1.0.dp.toPx()
+                val lineCount = if (isPreview) 4 else 7
+                for (i in 0 until lineCount) {
+                    val frac = i / (lineCount - 1f).coerceAtLeast(1f)
+                    val alpha = if (i % 2 == 0) 0.14f else 0.06f
+                    drawLine(
+                        color = Color(0xFFEBD0A4).copy(alpha = alpha),
+                        start = Offset(w * (-0.05f + frac * 0.55f), h * 1.05f),
+                        end = Offset(w * (0.45f + frac * 0.65f), -h * 0.05f),
+                        strokeWidth = strokeW
+                    )
+                }
+            }
+
+            AppDrawerBackground.ESPRESSO_BRONZE -> {
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF271912),
+                            Color(0xFF100A07),
+                            Color(0xFF1E130D)
+                        )
+                    )
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFFBA845A).copy(alpha = 0.24f),
+                            Color.Transparent
+                        ),
+                        center = Offset(w * 0.22f, h * 0.24f),
+                        radius = maxOf(w, h) * 0.65f
+                    )
+                )
+                val step = if (isPreview) 4.dp.toPx() else 7.dp.toPx()
+                val strokeW = if (isPreview) 0.5.dp.toPx() else 0.8.dp.toPx()
+                var offset = -h
+                var idx = 0
+                while (offset < w + h) {
+                    val alpha = if (idx % 3 == 0) 0.08f else 0.045f
+                    drawLine(
+                        color = Color(0xFFDCA980).copy(alpha = alpha),
+                        start = Offset(offset, h),
+                        end = Offset(offset + h * 0.65f, 0f),
+                        strokeWidth = strokeW
+                    )
+                    offset += step
+                    idx++
+                }
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color(0xB8060403)
+                        ),
+                        center = Offset(w * 0.5f, h * 0.5f),
+                        radius = maxOf(w, h) * 0.72f
+                    )
+                )
+            }
+
+            AppDrawerBackground.VELVET_MAROON -> {
+                drawRect(color = Color(0xFF0B0507))
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF7D2437).copy(alpha = 0.40f),
+                            Color(0xFF42111E).copy(alpha = 0.24f),
+                            Color.Transparent
+                        ),
+                        center = Offset(w * 0.30f, h * 0.25f),
+                        radius = maxOf(w, h) * 0.72f
+                    )
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF561829).copy(alpha = 0.25f),
+                            Color.Transparent
+                        ),
+                        center = Offset(w * 0.82f, h * 0.80f),
+                        radius = maxOf(w, h) * 0.62f
+                    )
+                )
+                val waveCount = if (isPreview) 5 else 9
+                val baseStroke = if (isPreview) 0.7.dp.toPx() else 1.2.dp.toPx()
+                for (i in 0 until waveCount) {
+                    val frac = i / (waveCount - 1f).coerceAtLeast(1f)
+                    val yStart = h * (0.14f + frac * 0.80f)
+                    val yEnd = h * (0.06f + frac * 0.86f)
+                    val path = Path().apply {
+                        moveTo(-w * 0.05f, yStart)
+                        cubicTo(
+                            w * 0.32f, yStart + h * (0.16f - frac * 0.12f),
+                            w * 0.68f, yEnd - h * (0.14f - frac * 0.08f),
+                            w * 1.05f, yEnd
+                        )
+                    }
+                    val alpha = 0.06f + (1f - kotlin.math.abs(frac - 0.5f) * 2f) * 0.08f
+                    drawPath(
+                        path = path,
+                        color = Color(0xFFD48494).copy(alpha = alpha),
+                        style = Stroke(width = baseStroke, cap = StrokeCap.Round)
+                    )
+                }
+            }
+
+            AppDrawerBackground.MIDNIGHT_SAPPHIRE -> {
+                drawRect(color = Color(0xFF05080F))
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF1E4378).copy(alpha = 0.42f),
+                            Color(0xFF102342).copy(alpha = 0.24f),
+                            Color.Transparent
+                        ),
+                        center = Offset(w * 0.75f, h * 0.20f),
+                        radius = maxOf(w, h) * 0.74f
+                    )
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF1A355C).copy(alpha = 0.22f),
+                            Color.Transparent
+                        ),
+                        center = Offset(w * 0.18f, h * 0.78f),
+                        radius = maxOf(w, h) * 0.56f
+                    )
+                )
+                val glassFacet1 = Path().apply {
+                    moveTo(w * 0.48f, 0f)
+                    lineTo(w * 0.92f, 0f)
+                    lineTo(w * 0.60f, h)
+                    lineTo(w * 0.24f, h)
+                    close()
+                }
+                val glassFacet2 = Path().apply {
+                    moveTo(w * 0.74f, 0f)
+                    lineTo(w, 0f)
+                    lineTo(w, h * 0.68f)
+                    lineTo(w * 0.54f, h)
+                    close()
+                }
+                drawPath(glassFacet1, color = Color(0xFF285592).copy(alpha = 0.14f))
+                drawPath(glassFacet2, color = Color(0xFF1A3D6E).copy(alpha = 0.18f))
+
+                val strokeW = if (isPreview) 0.7.dp.toPx() else 1.1.dp.toPx()
+                drawLine(
+                    color = Color(0xFF9AC2F2).copy(alpha = 0.14f),
+                    start = Offset(w * 0.48f, 0f),
+                    end = Offset(w * 0.24f, h),
+                    strokeWidth = strokeW
+                )
+                drawLine(
+                    color = Color(0xFF9AC2F2).copy(alpha = 0.10f),
+                    start = Offset(w * 0.92f, 0f),
+                    end = Offset(w * 0.60f, h),
+                    strokeWidth = strokeW
+                )
+                drawLine(
+                    color = Color(0xFF9AC2F2).copy(alpha = 0.07f),
+                    start = Offset(w, h * 0.68f),
+                    end = Offset(w * 0.54f, h),
+                    strokeWidth = strokeW
+                )
+            }
+
+            AppDrawerBackground.EMERALD_NOIR -> {
+                drawRect(color = Color(0xFF050B09))
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF1B5746).copy(alpha = 0.40f),
+                            Color(0xFF0D2E25).copy(alpha = 0.24f),
+                            Color.Transparent
+                        ),
+                        center = Offset(w * 0.28f, h * 0.22f),
+                        radius = maxOf(w, h) * 0.74f
+                    )
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF295E4F).copy(alpha = 0.20f),
+                            Color.Transparent
+                        ),
+                        center = Offset(w * 0.80f, h * 0.82f),
+                        radius = maxOf(w, h) * 0.60f
+                    )
+                )
+                val waveCount = if (isPreview) 5 else 10
+                val baseStroke = if (isPreview) 0.7.dp.toPx() else 1.1.dp.toPx()
+                for (i in 0 until waveCount) {
+                    val frac = i / (waveCount - 1f).coerceAtLeast(1f)
+                    val yStart = h * (0.10f + frac * 0.82f)
+                    val yEnd = h * (0.18f + frac * 0.78f)
+                    val path = Path().apply {
+                        moveTo(-w * 0.05f, yStart)
+                        cubicTo(
+                            w * 0.28f, yStart - h * (0.14f - frac * 0.06f),
+                            w * 0.66f, yEnd + h * (0.15f - frac * 0.07f),
+                            w * 1.05f, yEnd
+                        )
+                    }
+                    val alpha = 0.06f + (1f - kotlin.math.abs(frac - 0.5f) * 2f) * 0.07f
+                    drawPath(
+                        path = path,
+                        color = Color(0xFF83C7B1).copy(alpha = alpha),
+                        style = Stroke(width = baseStroke, cap = StrokeCap.Round)
+                    )
+                }
+            }
         }
     }
 }
@@ -1858,6 +2125,11 @@ fun appDrawerBackgroundLabel(preset: AppDrawerBackground, s: AppStrings): String
     AppDrawerBackground.BRUSHED_TITANIUM -> s.bgTitanium
     AppDrawerBackground.TOPO_CONTOUR -> s.bgContour
     AppDrawerBackground.MONOLITH_GRID -> s.bgPrism
+    AppDrawerBackground.CHAMPAGNE_GOLD -> s.bgChampagneGold
+    AppDrawerBackground.ESPRESSO_BRONZE -> s.bgEspressoBronze
+    AppDrawerBackground.VELVET_MAROON -> s.bgVelvetMaroon
+    AppDrawerBackground.MIDNIGHT_SAPPHIRE -> s.bgMidnightSapphire
+    AppDrawerBackground.EMERALD_NOIR -> s.bgEmeraldNoir
 }
 
 /**
@@ -1891,91 +2163,91 @@ fun BoxScope.AppDrawerBackgroundPickerOverlay(
         exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(150)),
         modifier = Modifier
             .align(Alignment.BottomCenter)
-            .padding(horizontal = 18.dp, vertical = 14.dp)
+            .padding(bottom = 14.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xEB11141B))
-                .border(0.8.dp, ObsidianColors.ObsidianSubBorder, RoundedCornerShape(16.dp))
+                .shadow(
+                    elevation = 24.dp,
+                    shape = RectangleShape,
+                    ambientColor = Color.Black,
+                    spotColor = Color.Black
+                )
+                .background(Color(0xF011141B))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
                 ) {}
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(0.8.dp)
+                    .background(ObsidianColors.ObsidianSubBorder.copy(alpha = 0.75f))
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clipToBounds()
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clipToBounds(),
+                    horizontalArrangement = Arrangement.spacedBy(0.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = s.backgroundTitle,
-                        color = ObsidianColors.PureSilver,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "· ${appDrawerBackgroundLabel(selectedBackground, s)}",
-                        color = ObsidianColors.MutedSilver,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-                Text(
-                    text = s.tapOutsideToFinish,
-                    color = ObsidianColors.DimSilver,
-                    fontSize = 10.sp
-                )
-            }
-
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                items(AppDrawerBackground.entries, key = { it.name }) { preset ->
-                    val selected = preset == selectedBackground
-                    Column(
-                        modifier = Modifier
-                            .width(112.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (selected) Color(0xFF1A202B) else Color(0xFF0A0C10))
-                            .border(
-                                width = if (selected) 1.4.dp else 0.8.dp,
-                                color = if (selected) ObsidianColors.PureSilver else ObsidianColors.ObsidianSubBorder,
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .clickable { onSelectBackground(preset) }
-                            .padding(5.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        AppDrawerBackgroundCanvas(
-                            preset = preset,
-                            isPreview = true,
+                    items(AppDrawerBackground.entries, key = { it.name }) { preset ->
+                        val selected = preset == selectedBackground
+                        Column(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(58.dp)
-                                .clip(RoundedCornerShape(7.dp))
-                        )
-                        Text(
-                            text = appDrawerBackgroundLabel(preset, s),
-                            color = if (selected) ObsidianColors.PureSilver else ObsidianColors.MutedSilver,
-                            fontSize = 10.5.sp,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                                .width(132.dp)
+                                .clickable { onSelectBackground(preset) },
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(96.dp)
+                                    .clipToBounds()
+                            ) {
+                                AppDrawerBackgroundCanvas(
+                                    preset = preset,
+                                    isPreview = true,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                if (selected) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .fillMaxWidth()
+                                            .height(2.dp)
+                                            .background(ObsidianColors.PureSilver)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = appDrawerBackgroundLabel(preset, s),
+                                color = if (selected) ObsidianColors.PureSilver else ObsidianColors.MutedSilver,
+                                fontSize = 10.5.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 9.dp)
+                            )
+                        }
                     }
                 }
             }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(0.8.dp)
+                    .background(ObsidianColors.ObsidianSubBorder.copy(alpha = 0.75f))
+            )
         }
     }
 }
@@ -2332,5 +2604,157 @@ private fun DockVectorButton(
         contentAlignment = Alignment.Center
     ) {
         icon()
+    }
+}
+
+/**
+ * Circular page indicator with a water-droplet / magnetic metaball bridge effect:
+ * the active dot always stays round when settled, and while swiping left or right it
+ * stretches and flows smoothly into the target dot proportional to scroll progress.
+ */
+@Composable
+fun LiquidMagneticPageIndicator(
+    totalPages: Int,
+    currentPagePosition: Float,
+    onSelectPage: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (totalPages <= 0) return
+
+    val dotPitch = 16.dp
+    val sidePadding = 10.dp
+    val totalWidth = dotPitch * (totalPages - 1).coerceAtLeast(0) + sidePadding * 2
+
+    Canvas(
+        modifier = modifier
+            .size(width = totalWidth, height = 18.dp)
+            .pointerInput(totalPages) {
+                detectTapGestures { offset ->
+                    val pitchPx = dotPitch.toPx()
+                    val padPx = sidePadding.toPx()
+                    val rawIndex = ((offset.x - padPx) / pitchPx)
+                    val tappedIndex = kotlin.math.round(rawIndex).toInt().coerceIn(0, totalPages - 1)
+                    onSelectPage(tappedIndex)
+                }
+            }
+    ) {
+        val pitch = dotPitch.toPx()
+        val firstX = sidePadding.toPx()
+        val cy = size.height * 0.5f
+        val inactiveRadius = 2.8.dp.toPx()
+        val activeRadius = 4.0.dp.toPx()
+
+        // 1. Stationary base dots
+        for (i in 0 until totalPages) {
+            drawCircle(
+                color = ObsidianColors.DimSilver.copy(alpha = 0.55f),
+                radius = inactiveRadius,
+                center = Offset(firstX + i * pitch, cy)
+            )
+        }
+
+        val maxIdx = (totalPages - 1).coerceAtLeast(0)
+        val clamped = currentPagePosition.coerceIn(0f, maxIdx.toFloat())
+        val leftIdx = kotlin.math.floor(clamped).toInt().coerceIn(0, maxIdx)
+        val rightIdx = (leftIdx + 1).coerceAtMost(maxIdx)
+        val t = (clamped - leftIdx).coerceIn(0f, 1f)
+
+        val xL = firstX + leftIdx * pitch
+        val xR = firstX + rightIdx * pitch
+
+        if (leftIdx == rightIdx || t <= 0.002f || t >= 0.998f) {
+            val activeX = if (t >= 0.998f) xR else xL
+            drawCircle(
+                color = ObsidianColors.PureSilver.copy(alpha = 0.14f),
+                radius = activeRadius * 1.45f,
+                center = Offset(activeX, cy)
+            )
+            drawCircle(
+                color = ObsidianColors.PureSilver,
+                radius = activeRadius,
+                center = Offset(activeX, cy)
+            )
+            return@Canvas
+        }
+
+        // 2. Active swipe: magnetic pull + fluid volume transfer + concave liquid bridge
+        val pull = kotlin.math.sin(t * kotlin.math.PI).toFloat().coerceIn(0f, 1f)
+        val r1 = activeRadius * (1f - t).pow(0.42f)
+        val r2 = activeRadius * t.pow(0.42f)
+
+        val cL = xL + pitch * 0.25f * t * pull
+        val cR = xR - pitch * 0.25f * (1f - t) * pull
+
+        if (r1 > 0.35f) {
+            drawCircle(
+                color = ObsidianColors.PureSilver.copy(alpha = (r1 / activeRadius) * 0.14f),
+                radius = r1 * 1.45f,
+                center = Offset(cL, cy)
+            )
+            drawCircle(
+                color = ObsidianColors.PureSilver,
+                radius = r1,
+                center = Offset(cL, cy)
+            )
+        }
+        if (r2 > 0.35f) {
+            drawCircle(
+                color = ObsidianColors.PureSilver.copy(alpha = (r2 / activeRadius) * 0.14f),
+                radius = r2 * 1.45f,
+                center = Offset(cR, cy)
+            )
+            drawCircle(
+                color = ObsidianColors.PureSilver,
+                radius = r2,
+                center = Offset(cR, cy)
+            )
+        }
+
+        val d = (cR - cL).coerceAtLeast(0.001f)
+        if (pull > 0.16f && r1 > 0.6f && r2 > 0.6f && d > kotlin.math.abs(r1 - r2) + 0.2f) {
+            val cosAlpha = ((r1 - r2) / d).coerceIn(-0.96f, 0.96f)
+            val sinAlpha = kotlin.math.sqrt((1f - cosAlpha * cosAlpha).coerceAtLeast(0f))
+
+            val p1Top = Offset(cL + r1 * cosAlpha, cy - r1 * sinAlpha)
+            val p2Top = Offset(cR + r2 * cosAlpha, cy - r2 * sinAlpha)
+            val p1Bottom = Offset(cL + r1 * cosAlpha, cy + r1 * sinAlpha)
+            val p2Bottom = Offset(cR + r2 * cosAlpha, cy + r2 * sinAlpha)
+
+            if (p2Top.x > p1Top.x + 0.1f) {
+                val bridgeTension = ((pull - 0.16f) / 0.84f).coerceIn(0f, 1f)
+                val waistHalf = minOf(r1, r2) * (0.08f + 0.36f * bridgeTension)
+                val midX = (p1Top.x + p2Top.x) * 0.5f
+
+                val h1 = ((midX - p1Top.x) * 0.55f).coerceAtLeast(0f)
+                val h2 = ((p2Top.x - midX) * 0.55f).coerceAtLeast(0f)
+
+                val bridgePath = Path().apply {
+                    moveTo(p1Top.x, p1Top.y)
+                    cubicTo(
+                        p1Top.x + sinAlpha * h1, p1Top.y + cosAlpha * h1,
+                        midX - h1, cy - waistHalf,
+                        midX, cy - waistHalf
+                    )
+                    cubicTo(
+                        midX + h2, cy - waistHalf,
+                        p2Top.x - sinAlpha * h2, p2Top.y - cosAlpha * h2,
+                        p2Top.x, p2Top.y
+                    )
+                    lineTo(p2Bottom.x, p2Bottom.y)
+                    cubicTo(
+                        p2Bottom.x - sinAlpha * h2, p2Bottom.y + cosAlpha * h2,
+                        midX + h2, cy + waistHalf,
+                        midX, cy + waistHalf
+                    )
+                    cubicTo(
+                        midX - h1, cy + waistHalf,
+                        p1Bottom.x + sinAlpha * h1, p1Bottom.y - cosAlpha * h1,
+                        p1Bottom.x, p1Bottom.y
+                    )
+                    close()
+                }
+                drawPath(path = bridgePath, color = ObsidianColors.PureSilver)
+            }
+        }
     }
 }
