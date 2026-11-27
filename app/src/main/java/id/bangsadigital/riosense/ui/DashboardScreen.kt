@@ -117,6 +117,8 @@ import id.bangsadigital.riosense.ui.components.LeftSpeedAndSecurityPanel
 import id.bangsadigital.riosense.ui.components.LiquidMagneticPageIndicator
 import id.bangsadigital.riosense.ui.components.MinimizedFloatingPillView
 import id.bangsadigital.riosense.ui.components.RightEngineTelemetryPanel
+import id.bangsadigital.riosense.ui.components.RoadMotionBackdrop
+import id.bangsadigital.riosense.ui.components.RoadMotionDirection
 import id.bangsadigital.riosense.ui.components.SimulatorAndSettingsSheet
 import id.bangsadigital.riosense.ui.components.TripRouteVectorIcon
 import id.bangsadigital.riosense.ui.components.WidgetPickerOverlay
@@ -157,6 +159,7 @@ fun RioSenseDashboardScreen(
     var showSpotlightSearch by remember { mutableStateOf(false) }
     var controlsInitialTab by remember { mutableStateOf<ControlsTab?>(null) }
     var isCarDragging by remember { mutableStateOf(false) }
+    var homeRoadDirection by remember { mutableStateOf<RoadMotionDirection?>(null) }
 
     var installedApps by remember { mutableStateOf<List<InstalledAppInfo>>(emptyList()) }
     var pinFeedback by remember { mutableStateOf<String?>(null) }
@@ -400,104 +403,112 @@ fun RioSenseDashboardScreen(
                 }
 
                 page == homePageIndex -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 18.dp, vertical = 12.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.SpaceBetween
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        RoadMotionBackdrop(
+                            direction = homeRoadDirection,
+                            speedKmh = telemetry.speedKmh,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
                         ) {
-                            // 1. BORDERLESS OEM TOP BAR
-                            TopObsidianBar(
-                                telemetry = telemetry,
-                                showSimulatorEntry = SHOW_SIMULATOR_TOOLS && telemetry.simulatorMode,
-                                hasServiceReminder = dueServiceItems.isNotEmpty(),
-                                isVoiceListening = voiceUiState.isListening,
-                                activeTripKm = if (telemetry.tripRecordingEnabled) activeTrip?.distanceKm else null,
-                                onSelectPaint = { repository.setPaintColor(it) },
-                                onToggleVoiceListening = onToggleVoiceListening,
-                                onToggleTripRecording = {
-                                    repository.setTripRecordingEnabled(!telemetry.tripRecordingEnabled)
-                                },
-                                onToggleMute = { repository.toggleAudioMute() },
-                                onOpenSimulator = {
-                                    showControlsDrawer = false
-                                    showSimulatorDrawer = !showSimulatorDrawer
-                                },
-                                onOpenControls = {
-                                    showSimulatorDrawer = false
-                                    controlsInitialTab = null
-                                    showControlsDrawer = !showControlsDrawer
-                                },
-                                onMinimize = { repository.setMinimized(true) }
-                            )
-
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            // 2. SEAMLESS 3-COLUMN STAGE (Zero borders on Speed, Car Stage, and Engine Telemetry)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.SpaceBetween
                             ) {
-                                LeftSpeedAndSecurityPanel(
+                                // 1. BORDERLESS OEM TOP BAR
+                                TopObsidianBar(
                                     telemetry = telemetry,
-                                    onToggleLock = { repository.toggleCentralLock() },
-                                    modifier = Modifier.weight(0.26f)
+                                    showSimulatorEntry = SHOW_SIMULATOR_TOOLS && telemetry.simulatorMode,
+                                    hasServiceReminder = dueServiceItems.isNotEmpty(),
+                                    isVoiceListening = voiceUiState.isListening,
+                                    activeTripKm = if (telemetry.tripRecordingEnabled) activeTrip?.distanceKm else null,
+                                    onSelectPaint = { repository.setPaintColor(it) },
+                                    onToggleVoiceListening = onToggleVoiceListening,
+                                    onToggleTripRecording = {
+                                        repository.setTripRecordingEnabled(!telemetry.tripRecordingEnabled)
+                                    },
+                                    onToggleMute = { repository.toggleAudioMute() },
+                                    onOpenSimulator = {
+                                        showControlsDrawer = false
+                                        showSimulatorDrawer = !showSimulatorDrawer
+                                    },
+                                    onOpenControls = {
+                                        showSimulatorDrawer = false
+                                        controlsInitialTab = null
+                                        showControlsDrawer = !showControlsDrawer
+                                    },
+                                    onMinimize = { repository.setMinimized(true) }
                                 )
 
-                                KiaRioInteractiveStage(
-                                    telemetry = telemetry,
-                                    onToggleDoor = { doorCode -> repository.toggleDoor(doorCode) },
-                                    onDragStateChanged = { isCarDragging = it },
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // 2. SEAMLESS 3-COLUMN STAGE (Zero borders on Speed, Car Stage, and Engine Telemetry)
+                                Row(
                                     modifier = Modifier
-                                        .weight(0.48f)
-                                        .fillMaxHeight()
-                                )
+                                        .fillMaxWidth()
+                                        .weight(1f),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    LeftSpeedAndSecurityPanel(
+                                        telemetry = telemetry,
+                                        onToggleLock = { repository.toggleCentralLock() },
+                                        modifier = Modifier.weight(0.26f)
+                                    )
 
-                                RightEngineTelemetryPanel(
+                                    KiaRioInteractiveStage(
+                                        telemetry = telemetry,
+                                        onToggleDoor = { doorCode -> repository.toggleDoor(doorCode) },
+                                        onDragStateChanged = { isCarDragging = it },
+                                        onRoadMotionDirectionChange = { homeRoadDirection = it },
+                                        modifier = Modifier
+                                            .weight(0.48f)
+                                            .fillMaxHeight()
+                                    )
+
+                                    RightEngineTelemetryPanel(
+                                        telemetry = telemetry,
+                                        modifier = Modifier.weight(0.26f)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // 3. BORDERLESS MINIMALIST STATUS FOOTER (Live Alerts > Service Reminders > Nominal)
+                                BottomAlertBanner(
                                     telemetry = telemetry,
-                                    modifier = Modifier.weight(0.26f)
+                                    maintenance = maintenance,
+                                    onAcknowledgeOrFix = { repository.applyNormalPreset() },
+                                    onOpenServiceReminders = {
+                                        showSimulatorDrawer = false
+                                        controlsInitialTab = ControlsTab.SERVICE
+                                        showControlsDrawer = true
+                                    }
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(6.dp))
+                            // 3b. FLOATING OBSIDIAN VOICE COMMAND OVERLAY
+                            if (voiceUiState.isListening || voiceUiState.feedbackCard != null) {
+                                val bottomOffset = if (voiceUiState.isListening) 86.dp else 46.dp
+                                VoiceCommandFloatingOverlay(
+                                    voiceUiState = voiceUiState,
+                                    onStopListening = onToggleVoiceListening,
+                                    onDismissCard = onDismissVoiceFeedback,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .padding(bottom = bottomOffset)
+                                )
+                            }
 
-                            // 3. BORDERLESS MINIMALIST STATUS FOOTER (Live Alerts > Service Reminders > Nominal)
-                            BottomAlertBanner(
-                                telemetry = telemetry,
-                                maintenance = maintenance,
-                                onAcknowledgeOrFix = { repository.applyNormalPreset() },
-                                onOpenServiceReminders = {
-                                    showSimulatorDrawer = false
-                                    controlsInitialTab = ControlsTab.SERVICE
-                                    showControlsDrawer = true
-                                }
-                            )
-                        }
-
-                        // 3b. FLOATING OBSIDIAN VOICE COMMAND OVERLAY
-                        if (voiceUiState.isListening || voiceUiState.feedbackCard != null) {
-                            val bottomOffset = if (voiceUiState.isListening) 86.dp else 46.dp
-                            VoiceCommandFloatingOverlay(
-                                voiceUiState = voiceUiState,
-                                onStopListening = onToggleVoiceListening,
-                                onDismissCard = onDismissVoiceFeedback,
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .padding(bottom = bottomOffset)
-                            )
-                        }
-
-                        // 3c. OPTIONAL ASSISTIVETOUCH-STYLE FLOATING GLASS MIC BUTTON
-                        if (telemetry.voiceButtonStyle == VoiceButtonStyle.FLOATING) {
-                            FloatingGlassMicButton(
-                                isListening = voiceUiState.isListening,
-                                onClick = onToggleVoiceListening
-                            )
+                            // 3c. OPTIONAL ASSISTIVETOUCH-STYLE FLOATING GLASS MIC BUTTON
+                            if (telemetry.voiceButtonStyle == VoiceButtonStyle.FLOATING) {
+                                FloatingGlassMicButton(
+                                    isListening = voiceUiState.isListening,
+                                    onClick = onToggleVoiceListening
+                                )
+                            }
                         }
                     }
                 }

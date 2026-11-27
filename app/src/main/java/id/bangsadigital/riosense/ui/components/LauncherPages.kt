@@ -2150,6 +2150,8 @@ private fun showroomAmbientColor(preset: AppDrawerBackground): Color = when (pre
     AppDrawerBackground.EMERALD_NOIR -> Color(0xFF3E9E80)
 }
 
+internal const val HOME_SHOWROOM_HORIZON_Y_FRAC = 0.67f
+
 /**
  * Showroom Spotlight + Horizon backdrop for the Home hero stage that stays faithful to Deep Obsidian
  * while subtly auto-syncing its studio lighting and floor reflection hue to the Widgets & Apps themes.
@@ -2175,7 +2177,7 @@ fun HomeShowroomStageBackdrop(
     Canvas(modifier = modifier.clipToBounds()) {
         val w = size.width
         val h = size.height
-        val horizonY = h * 0.67f
+        val horizonY = h * HOME_SHOWROOM_HORIZON_Y_FRAC
 
         // 1. Deep Obsidian base
         drawRect(color = ObsidianColors.DeepObsidian)
