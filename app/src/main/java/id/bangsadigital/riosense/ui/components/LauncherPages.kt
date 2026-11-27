@@ -2161,9 +2161,7 @@ fun BoxScope.AppDrawerBackgroundPickerOverlay(
         visible = visible,
         enter = slideInVertically(tween(220)) { it } + fadeIn(tween(180)),
         exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(150)),
-        modifier = Modifier
-            .align(Alignment.BottomCenter)
-            .padding(bottom = 14.dp)
+        modifier = Modifier.align(Alignment.BottomCenter)
     ) {
         Column(
             modifier = Modifier
@@ -2241,13 +2239,6 @@ fun BoxScope.AppDrawerBackgroundPickerOverlay(
                     }
                 }
             }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(0.8.dp)
-                    .background(ObsidianColors.ObsidianSubBorder.copy(alpha = 0.75f))
-            )
         }
     }
 }
